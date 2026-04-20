@@ -42,6 +42,12 @@ session:<code>        ← 한 반 전체 (전체 공지, 대기창 상태)
 
 ```
 mesa/
+├── assets/                  ← 게임 콘텐츠 (Maker 포팅 후 사용 시작, git 으로 버전 관리)
+│   ├── characters/          ← 캐릭터 스프라이트 + 메타데이터
+│   ├── items/               ← 코어, 단서 카드 등
+│   ├── maps/                ← 1~4막 배경 맵
+│   └── npcs/                ← AI 등 NPC
+│
 ├── shared/types/            ← 클라/서버 공유 타입 (Socket 이벤트, 게임 상태)
 │   ├── game.ts              Fraction, TeamState, SessionState, ActState, StudentInfo
 │   ├── events.ts            ServerToClientEvents, ClientToServerEvents, PuzzleAction
@@ -152,7 +158,12 @@ mesa/
 ## 🚧 TODO (다음 단계)
 
 ### 가까운 우선순위
-- [ ] **3개 Maker 포팅** — safegame 의 CharacterMaker / ItemMaker / MapMaker 를 TypeScript 로 포팅 (관리자 전용, DB 저장)
+- [ ] **3개 Maker 포팅 + 에셋 저장 방식 전환** (한 묶음)
+  - safegame 의 CharacterMaker / ItemMaker / MapMaker 를 TypeScript 로 포팅
+  - **중요**: DB 저장이 아닌 **파일 저장** 으로 설계 변경 (`mesa/assets/` 폴더에 JSON + PNG)
+  - `prisma/schema.prisma` 에서 Character/Item/Map 모델 제거 + 마이그레이션
+  - Maker 백엔드 API 가 파일로 저장하도록 구현
+  - 이유: 선생님 1명 제작 · 고정 콘텐츠 · git 으로 버전 관리 & 다른 PC 자동 전파
 - [ ] **1막 Phaser 씬** — 전력망 동기화 (분수 덧셈/뺄셈 + 4인 동시 선택)
 - [ ] **2막** — 냉각수 코어 식별 (저울 추리 + 단서 분산)
 - [ ] **3막** — AI 오버라이드 암호 (원판 중첩 시각)
@@ -170,6 +181,18 @@ mesa/
 - [ ] 힌트 시스템 (각 막 단계별 힌트)
 - [ ] 배경 음악 · 효과음
 - [ ] 컨텐츠 확장 툴 (관리자 에셋 CRUD UI)
+- [ ] **배포 시점**: 전체 docker-compose 구성 (Postgres + server + client) — safegame 참고
+
+## 🗂 에셋 저장 정책
+
+MESA 의 게임 콘텐츠 에셋(캐릭터 · 아이템 · 맵 · NPC)은 **DB 가 아닌 파일로** 저장합니다.
+상세 이유와 구조는 [`docs/CONTEXT_FOR_CLAUDE.md`](docs/CONTEXT_FOR_CLAUDE.md) 의 "에셋 저장 방식" 섹션 참조.
+
+**요약**:
+- `mesa/assets/{characters,items,maps,npcs}/` 폴더에 JSON + PNG 로 저장
+- git 으로 버전 관리 → 다른 PC 에 `git pull` 만으로 전파
+- DB 는 `User`, `Session`, `TeamLog` 등 운영 데이터만 관리
+- **적용 시점**: Maker 3종 포팅 단계에서 동시에 진행
 
 미해결 설계 항목은 [`docs/mesa-scenario.md#미해결--차후-결정-사항`](docs/mesa-scenario.md) 참조.
 
