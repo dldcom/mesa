@@ -1,0 +1,11 @@
+# 텍스트 파일의 줄 끝(CRLF/LF) 통일 — Windows/Mac/Linux 혼용 대비
+* text=auto eol=lf
+
+# 바이너리 명시
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

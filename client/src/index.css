@@ -1,0 +1,56 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo',
+    'Malgun Gothic', 'Helvetica Neue', Arial, sans-serif;
+  background: #0a0e1a;
+  color: #e5e7eb;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+#game-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* 기본 placeholder 스타일 */
+.placeholder-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.placeholder-page h1 {
+  font-size: 2rem;
+  margin-bottom: 12px;
+  color: #93c5fd;
+}
+
+.placeholder-page p {
+  color: #94a3b8;
+  max-width: 480px;
+  line-height: 1.6;
+}

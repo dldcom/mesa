@@ -1,0 +1,83 @@
+// MESA Database Schema
+// 관리자/교사 계정, 세션 기록, 관리자가 제작한 에셋(캐릭터/아이템/맵)을 저장합니다.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+}
+
+model User {
+  id         Int       @id @default(autoincrement())
+  username   String    @unique
+  password   String
+  role       Role      @default(TEACHER)
+  sessions   Session[]
+  characters Character[]
+  items      Item[]
+  maps       Map[]
+  createdAt  DateTime  @default(now())
+}
+
+model Session {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  teacherId Int
+  teacher   User      @relation(fields: [teacherId], references: [id])
+  startedAt DateTime?
+  endedAt   DateTime?
+  teams     TeamLog[]
+  createdAt DateTime  @default(now())
+}
+
+model TeamLog {
+  id               Int      @id @default(autoincrement())
+  sessionId        Int
+  session          Session  @relation(fields: [sessionId], references: [id])
+  teamName         String
+  students         String[] // 학생 이름 배열
+  completedActs    Int      @default(0)
+  totalTimeSeconds Int?
+  createdAt        DateTime @default(now())
+}
+
+// ========= 관리자 제작 에셋 =========
+
+model Character {
+  id         Int      @id @default(autoincrement())
+  name       String
+  spriteData Json     // 프레임/애니메이션 정의
+  createdBy  Int
+  creator    User     @relation(fields: [createdBy], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Item {
+  id        Int      @id @default(autoincrement())
+  name      String
+  imageUrl  String
+  type      String   // 예: "core", "clue", "tile"
+  metadata  Json?
+  createdBy Int
+  creator   User     @relation(fields: [createdBy], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Map {
+  id           Int      @id @default(autoincrement())
+  name         String
+  actNumber    Int      // 1~4 (어느 막에서 사용되는 맵인가)
+  mapData      Json     // 타일맵 데이터
+  previewImage String?
+  createdBy    Int
+  creator      User     @relation(fields: [createdBy], references: [id])
+  createdAt    DateTime @default(now())
+}
