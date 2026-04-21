@@ -1,0 +1,11 @@
+{
+  "id": "blue_core",
+  "name": "파란 코어",
+  "itemId": "blue_core",
+  "category": "core",
+  "actNumber": 2,
+  "imageExt": "png",
+  "createdAt": "2026-04-21T12:42:03.386Z",
+  "updatedAt": "2026-04-21T12:42:03.386Z",
+  "imagePath": "/assets/items/blue_core.png"
+}

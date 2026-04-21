@@ -1,0 +1,104 @@
+/* Crop Modal Styling */
+.crop-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+}
+
+.crop-modal-content {
+    width: 90%;
+    max-width: 600px;
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.crop-modal-header {
+    margin-bottom: 1.5rem;
+    text-align: left;
+}
+
+.crop-modal-header h3 {
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+    color: #1a1a1a;
+}
+
+.crop-modal-header p {
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.crop-area-container {
+    position: relative;
+    width: 100%;
+    max-height: 60vh;
+    overflow: hidden;
+    background: #f0f0f0;
+    cursor: ns-resize;
+    user-select: none;
+    border-radius: 8px;
+    border: 1px solid #eee;
+}
+
+.crop-image-preview {
+    width: 100%;
+    height: auto;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
+    /* 이미지 자체가 이벤트를 가로채지 않게 설정 */
+}
+
+.crop-guide-dim {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    z-index: 5;
+}
+
+.crop-guide-line {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: #e11d48;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 0 8px rgba(225, 29, 72, 0.5);
+}
+
+.crop-guide-line.top {
+    border-top: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.crop-guide-line.bottom {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.crop-handle {
+    position: absolute;
+    right: 10px;
+    top: -22px;
+    background: #e11d48;
+    color: white;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}

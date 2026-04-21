@@ -1,5 +1,7 @@
 // MESA Database Schema
-// 관리자/교사 계정, 세션 기록, 관리자가 제작한 에셋(캐릭터/아이템/맵)을 저장합니다.
+// 운영 데이터(유저 계정, 세션 기록)만 관리.
+// 게임 콘텐츠 에셋(Character/Item/Map/NPC)은 mesa/assets/ 폴더에 파일로 저장됨 (DB 아님).
+// 결정 이력은 docs/CONTEXT_FOR_CLAUDE.md 의 "에셋 저장 방식" 섹션 참조.
 
 generator client {
   provider = "prisma-client-js"
@@ -16,15 +18,12 @@ enum Role {
 }
 
 model User {
-  id         Int       @id @default(autoincrement())
-  username   String    @unique
-  password   String
-  role       Role      @default(TEACHER)
-  sessions   Session[]
-  characters Character[]
-  items      Item[]
-  maps       Map[]
-  createdAt  DateTime  @default(now())
+  id        Int       @id @default(autoincrement())
+  username  String    @unique
+  password  String
+  role      Role      @default(TEACHER)
+  sessions  Session[]
+  createdAt DateTime  @default(now())
 }
 
 model Session {
@@ -47,37 +46,4 @@ model TeamLog {
   completedActs    Int      @default(0)
   totalTimeSeconds Int?
   createdAt        DateTime @default(now())
-}
-
-// ========= 관리자 제작 에셋 =========
-
-model Character {
-  id         Int      @id @default(autoincrement())
-  name       String
-  spriteData Json     // 프레임/애니메이션 정의
-  createdBy  Int
-  creator    User     @relation(fields: [createdBy], references: [id])
-  createdAt  DateTime @default(now())
-}
-
-model Item {
-  id        Int      @id @default(autoincrement())
-  name      String
-  imageUrl  String
-  type      String   // 예: "core", "clue", "tile"
-  metadata  Json?
-  createdBy Int
-  creator   User     @relation(fields: [createdBy], references: [id])
-  createdAt DateTime @default(now())
-}
-
-model Map {
-  id           Int      @id @default(autoincrement())
-  name         String
-  actNumber    Int      // 1~4 (어느 막에서 사용되는 맵인가)
-  mapData      Json     // 타일맵 데이터
-  previewImage String?
-  createdBy    Int
-  creator      User     @relation(fields: [createdBy], references: [id])
-  createdAt    DateTime @default(now())
 }
