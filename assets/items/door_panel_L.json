@@ -1,0 +1,11 @@
+{
+  "id": "door_panel_L",
+  "name": "door_panel_L",
+  "itemId": "door_panel_L",
+  "category": "prop",
+  "actNumber": 1,
+  "imageExt": "png",
+  "createdAt": "2026-04-22T14:47:47.759Z",
+  "updatedAt": "2026-04-22T14:47:47.759Z",
+  "imagePath": "/assets/items/door_panel_L.png"
+}

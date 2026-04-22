@@ -30,9 +30,9 @@ export default class BootScene extends Phaser.Scene {
       bar.width = 400 * value;
     });
 
-    // 맵
-    this.load.image('act1_bg', '/assets/maps/act1.png');
-    this.load.json('act1_data', '/assets/maps/act1.json');
+    // 맵 (1막 전력망 동기화)
+    this.load.image('act1_bg', '/assets/maps/act1_power_grid.png');
+    this.load.json('act1_data', '/assets/maps/act1_power_grid.json');
 
     // 플레이어 캐릭터 (6프레임 × 4방향 = 24프레임 아틀라스)
     this.load.spritesheet('dragon', '/assets/characters/dragon.png', {
@@ -46,8 +46,14 @@ export default class BootScene extends Phaser.Scene {
       frameHeight: 64,
     });
 
-    // 아이템
+    // 아이템: 배터리 (현재는 blue_core 재사용)
     this.load.image('blue_core', '/assets/items/blue_core.png');
+
+    // 1막 퍼즐 에셋: 레버 2종 + 문 좌/우 패널
+    this.load.image('lever_off', '/assets/items/lever_off.png');
+    this.load.image('lever_on', '/assets/items/lever_on.png');
+    this.load.image('door_panel_L', '/assets/items/door_panel_L.png');
+    this.load.image('door_panel_R', '/assets/items/door_panel_R.png');
   }
 
   create() {

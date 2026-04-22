@@ -1,0 +1,11 @@
+{
+  "id": "lever_off",
+  "name": "lever_off",
+  "itemId": "lever_off",
+  "category": "lever",
+  "actNumber": 1,
+  "imageExt": "png",
+  "createdAt": "2026-04-22T14:44:15.173Z",
+  "updatedAt": "2026-04-22T14:44:15.173Z",
+  "imagePath": "/assets/items/lever_off.png"
+}
