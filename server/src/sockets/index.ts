@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/types/events';
 import { registerTeacherHandlers } from './teacherHandlers';
 import { registerStudentHandlers } from './studentHandlers';
+import { registerPuzzleHandlers } from './puzzleHandlers';
 
 export type MesaIo = SocketServer<ClientToServerEvents, ServerToClientEvents>;
 
@@ -24,6 +25,7 @@ export const setupSocket = (httpServer: HttpServer): MesaIo => {
 
     registerStudentHandlers(io, socket);
     registerTeacherHandlers(io, socket);
+    registerPuzzleHandlers(io, socket);
 
     socket.on('disconnect', (reason) => {
       console.log(`[Socket] Disconnected: ${socket.id} (${reason})`);

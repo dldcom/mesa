@@ -7,6 +7,7 @@ import {
   isUnassigned,
   type LightSnapshot,
 } from '@/store/useSessionStore';
+import type { StudentSlot } from '@shared/types/game';
 
 export default function StudentWaitPage() {
   const navigate = useNavigate();
@@ -26,13 +27,10 @@ export default function StudentWaitPage() {
     const socket = getSocket();
 
     const onState = (s: LightSnapshot) => setSnapshot(s);
-    const onGameStarted = (data: { teamId: string }) => {
-      // 내 팀 ID 와 일치하는 시작 신호면 게임으로
-      const myTeam = findMyTeam(snapshot, studentId);
-      if (myTeam && myTeam.id === data.teamId) {
-        markGameStarted(data.teamId);
-        navigate('/game');
-      }
+    const onGameStarted = (data: { teamId: string; slot: StudentSlot }) => {
+      // 서버가 이미 내 소켓에만 보내므로 바로 저장 + 이동
+      markGameStarted(data.teamId, data.slot);
+      navigate('/game');
     };
 
     socket.on('session:state', onState);

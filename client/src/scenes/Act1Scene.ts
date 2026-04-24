@@ -1,12 +1,14 @@
 // 1막: 전력망 동기화
-// 월드 내 상호작용 기반 퍼즐:
-// - 레버 8개 (A/B/C/D × 2) 중 각 슬롯마다 1개만 당길 수 있음
-// - 4슬롯 전원 선택 완료 시 자동 판정
-// - 성공: 배터리 점등 + 카메라 쉐이크 / 실패: 전원 리셋
-// 솔로 테스트: 플레이어 혼자 네 방을 오가며 전부 당겨볼 수 있음.
+// solo 모드: 혼자 1/2/3/4 키로 슬롯 전환, 로컬 판정
+// multi 모드: 내 슬롯 고정, 서버 권위 판정, team:state 로 동료 선택 동기화
 
 import Phaser from 'phaser';
 import { gameEventBus } from '@/lib/gameEventBus';
+import { getSocket } from '@/services/socket';
+import {
+  useDialogueStore,
+  type DialogueScript,
+} from '@/store/useDialogueStore';
 import {
   ACT1_PUZZLE,
   evaluateAct1,
@@ -14,6 +16,7 @@ import {
   type StudentSlot,
   type Act1Evaluation,
 } from '@shared/lib/act1Logic';
+import type { TeamState } from '@shared/types/game';
 import { format } from '@shared/lib/fraction';
 
 const TILE_SIZE = 32;
@@ -22,8 +25,8 @@ const MAP_HEIGHT = 64;
 const MAP_PIXEL_W = TILE_SIZE * MAP_WIDTH;
 const MAP_PIXEL_H = TILE_SIZE * MAP_HEIGHT;
 const PLAYER_SPEED = 180;
-const NPC_PROXIMITY = 56;
-const LEVER_PROXIMITY = 44;
+const NPC_PROXIMITY = 80;
+const LEVER_PROXIMITY = 56;
 
 // 문 충돌 박스 가로 너비(타일 단위). 맵 통로가 4타일이면 4 로 확장.
 const DOOR_COLLISION_WIDTH_TILES = 4;
@@ -100,7 +103,8 @@ export default class Act1Scene extends Phaser.Scene {
     C: null,
     D: null,
   };
-  private currentSlot: StudentSlot = 'A'; // 솔로 테스트: 1/2/3/4 키로 스위치
+  private mode: 'solo' | 'multi' = 'solo';
+  private currentSlot: StudentSlot = 'A'; // multi: 서버가 배정, solo: 1/2/3/4 로 변경
   private resolved = false; // 성공 후 잠금
 
   constructor() {
@@ -108,6 +112,11 @@ export default class Act1Scene extends Phaser.Scene {
   }
 
   create() {
+    // 0. 모드 결정
+    this.mode = (this.registry.get('mode') as 'solo' | 'multi') ?? 'solo';
+    this.currentSlot =
+      (this.registry.get('mySlot') as StudentSlot | undefined) ?? 'A';
+
     // 1. 배경
     const bgBelow = this.add.image(0, 0, 'act1_bg');
     bgBelow.setOrigin(0, 0);
@@ -189,6 +198,8 @@ export default class Act1Scene extends Phaser.Scene {
       );
       sprite.setDepth(10);
       sprite.setInteractive({ useHandCursor: true });
+      // 48×64 NPC 의 발치만 잡음
+      this.makeSolid(sprite, 28, 14, 24);
       const npc: Npc = {
         sprite,
         key: npcKey,
@@ -219,8 +230,11 @@ export default class Act1Scene extends Phaser.Scene {
       const cx = s.x + TILE_SIZE / 2;
       const cy = s.y + TILE_SIZE / 2;
       const sprite = this.add.image(cx, cy, 'lever_off');
+      sprite.setScale(2.5);
       sprite.setDepth(9);
       sprite.setInteractive({ useHandCursor: true });
+      // 레버 (2.5배 스케일) 밑단
+      this.makeSolid(sprite, 24, 14, 8);
       const lever: Lever = { slot, choice, sprite, on: false, x: cx, y: cy };
       this.levers.push(lever);
       sprite.on('pointerdown', () => this.tryPullLever(lever));
@@ -312,6 +326,7 @@ export default class Act1Scene extends Phaser.Scene {
         );
         this.battery.setDepth(9);
         this.battery.setAlpha(0.5); // 꺼져 있는 상태
+        this.makeSolid(this.battery, 24, 16, 4);
         this.tweens.add({
           targets: this.battery,
           y: this.battery.y - 3,
@@ -341,6 +356,7 @@ export default class Act1Scene extends Phaser.Scene {
         itemKey
       );
       item.setDepth(9);
+      this.makeSolid(item, 24, 16, 4);
       this.tweens.add({
         targets: item,
         y: item.y - 3,
@@ -384,15 +400,19 @@ export default class Act1Scene extends Phaser.Scene {
     this.spaceKey = this.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE
     );
-    // 슬롯 스위치 키 1/2/3/4 — 솔로 테스트용
-    const slotKeys: Array<[string, StudentSlot]> = [
-      ['ONE', 'A'],
-      ['TWO', 'B'],
-      ['THREE', 'C'],
-      ['FOUR', 'D'],
-    ];
-    for (const [keyName, slot] of slotKeys) {
-      this.input.keyboard!.on(`keydown-${keyName}`, () => this.switchSlot(slot));
+    // 슬롯 스위치 키 1/2/3/4 — 솔로 테스트 전용
+    if (this.mode === 'solo') {
+      const slotKeys: Array<[string, StudentSlot]> = [
+        ['ONE', 'A'],
+        ['TWO', 'B'],
+        ['THREE', 'C'],
+        ['FOUR', 'D'],
+      ];
+      for (const [keyName, slot] of slotKeys) {
+        this.input.keyboard!.on(`keydown-${keyName}`, () =>
+          this.switchSlot(slot)
+        );
+      }
     }
 
     // 9. HUD — 좌상단
@@ -444,11 +464,60 @@ export default class Act1Scene extends Phaser.Scene {
 
     this.updateHud();
     this.updateDoorLocks();
+
+    // 멀티: 서버 이벤트 구독 + 초기 상태는 이미 도착했을 수도 있으니 다음 team:state 를 기다림
+    if (this.mode === 'multi') this.subscribeServerEvents();
+
+    // 씬 진입 인트로
+    this.showDialogue('intro');
+  }
+
+  private subscribeServerEvents() {
+    const onTeamState = (p: { teamState: TeamState }) =>
+      this.applyServerState(p.teamState);
+    const onSolved = (p: { act: number }) => {
+      if (p.act === 1) this.playVictoryFromServer();
+    };
+    const onFailed = (p: { act: number; reason: string }) => {
+      if (p.act !== 1) return;
+      const status = p.reason === 'overload' ? 'overload' : 'shortage';
+      this.playFailureFromServer(status);
+    };
+    gameEventBus.on('server:teamState', onTeamState);
+    gameEventBus.on('server:puzzleSolved', onSolved);
+    gameEventBus.on('server:puzzleFailed', onFailed);
+    this.events.once('shutdown', () => {
+      gameEventBus.off('server:teamState', onTeamState);
+      gameEventBus.off('server:puzzleSolved', onSolved);
+      gameEventBus.off('server:puzzleFailed', onFailed);
+    });
+  }
+
+  // 서버가 보낸 팀 상태를 로컬 렌더에 반영
+  private applyServerState(ts: TeamState) {
+    this.selections = { ...ts.act1.selections };
+    // 레버 비주얼 동기화
+    for (const lever of this.levers) {
+      const want = this.selections[lever.slot] === lever.choice;
+      if (lever.on !== want) {
+        lever.on = want;
+        lever.sprite.setTexture(want ? 'lever_on' : 'lever_off');
+      }
+    }
+    this.updateHud();
   }
 
   update() {
     if (!this.player || !this.cursors) return;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
+
+    // 다이얼로그 오픈 중이면 입력 차단
+    if (useDialogueStore.getState().open) {
+      body.setVelocity(0, 0);
+      this.player.anims.stop();
+      this.player.setFrame(0);
+      return;
+    }
 
     let vx = 0;
     let vy = 0;
@@ -544,26 +613,33 @@ export default class Act1Scene extends Phaser.Scene {
       npc.sprite.y
     );
     if (d > NPC_PROXIMITY) return;
-    this.showToast('"네 방의 레버를 당기고 전원이 끝나길 기다려라."', 2600);
+    this.showDialogue(npc.key);
   }
 
   private tryPullLever(lever: Lever) {
     if (this.resolved) return;
-    const d = Phaser.Math.Distance.Between(
-      this.player.x,
-      this.player.y,
-      lever.x,
-      lever.y
-    );
-    if (d > LEVER_PROXIMITY) return;
 
-    // 솔로 테스트: 현재 슬롯과 매칭되는 레버만 당길 수 있음
-    if (lever.slot !== this.currentSlot) {
-      this.showToast(
-        `이건 ${lever.slot} 슬롯 레버입니다. 현재 당신은 ${this.currentSlot} (1/2/3/4 로 변경)`,
-        1800
-      );
+    // ===== 멀티 =====
+    if (this.mode === 'multi') {
+      if (lever.slot !== this.currentSlot) {
+        this.showToast(`${lever.slot} 팀원이 조작하는 레버입니다`, 1500);
+        return;
+      }
+      // 이미 켜진 같은 레버 → 해제(null), 그 외 → 해당 choice 로
+      const nextChoice: PathChoice | null = lever.on ? null : lever.choice;
+      getSocket().emit('puzzle:action', {
+        act: 1,
+        type: 'selectPath',
+        choice: nextChoice,
+      });
       return;
+    }
+
+    // ===== 솔로 =====
+    // 다른 슬롯 레버 클릭 시 슬롯 자동 전환
+    if (lever.slot !== this.currentSlot) {
+      this.currentSlot = lever.slot;
+      this.updateDoorLocks();
     }
 
     if (lever.on) {
@@ -684,12 +760,11 @@ export default class Act1Scene extends Phaser.Scene {
     else this.playFailure(evaluation);
   }
 
-  private playVictory(ev: Act1Evaluation) {
+  // ===== 승리/실패 공통 비주얼 =====
+  private playVictoryCore() {
     this.resolved = true;
-    this.showToast(`✅ 배터리 완충 — 통로 개방  (합 ${format(ev.sum)})`, 4000);
-    // 카메라 쉐이크
+    this.showDialogue('victory');
     this.cameras.main.shake(600, 0.008);
-    // 배터리 점등
     if (this.battery) {
       this.tweens.add({
         targets: this.battery,
@@ -702,20 +777,23 @@ export default class Act1Scene extends Phaser.Scene {
         onComplete: () => this.battery?.setScale(1.1),
       });
     }
-    // 모든 문 열림 (애니메이션)
     for (const door of this.doors) this.setDoorState(door, 'available');
     gameEventBus.emit('act1:solved');
   }
 
-  private playFailure(ev: Act1Evaluation) {
-    const msg =
-      ev.status === 'overload'
-        ? `⚠️ 과부하  (+${format(ev.diff)})  — 다시 선택`
-        : `⚠️ 에너지 부족 (${format(ev.diff)}) — 다시 선택`;
-    this.showToast(msg, 2800);
-    // 짧은 쉐이크
+  private playFailureCore(status: 'overload' | 'shortage') {
+    this.showDialogue(status === 'overload' ? 'fail_overload' : 'fail_shortage');
     this.cameras.main.shake(250, 0.004);
-    // 전원 리셋: 모든 레버 + selections
+  }
+
+  // solo: 로컬 판정 결과로 승리 연출
+  private playVictory(_ev: Act1Evaluation) {
+    this.playVictoryCore();
+  }
+
+  // solo: 로컬 판정 결과로 실패 + 로컬 리셋
+  private playFailure(ev: Act1Evaluation) {
+    this.playFailureCore(ev.status === 'overload' ? 'overload' : 'shortage');
     this.time.delayedCall(800, () => {
       for (const lever of this.levers) {
         lever.on = false;
@@ -724,6 +802,38 @@ export default class Act1Scene extends Phaser.Scene {
       this.selections = { A: null, B: null, C: null, D: null };
       this.updateHud();
     });
+  }
+
+  // multi: 서버 권위 이벤트에서 호출 (로컬 리셋은 team:state 가 알아서)
+  private playVictoryFromServer() {
+    this.playVictoryCore();
+  }
+
+  private playFailureFromServer(status: 'overload' | 'shortage') {
+    this.playFailureCore(status);
+  }
+
+  // 아이템/NPC 아래에 별도 정적 충돌 박스를 붙임 (발치/밑단만 잡아 가까이 가도 겹치지 않게)
+  // offsetY: 스프라이트 중심에서 아래로 얼마나 내릴지 (+ = 아래)
+  private makeSolid(
+    go: Phaser.GameObjects.Image | Phaser.GameObjects.Sprite,
+    w: number,
+    h: number,
+    offsetY = 0
+  ) {
+    const rect = this.add.rectangle(go.x, go.y + offsetY, w, h, 0xff0000, 0);
+    this.physics.add.existing(rect, true);
+    this.physics.add.collider(this.player, rect);
+  }
+
+  // dialogue_act1 JSON 에서 키로 대사 묶음을 꺼내 스토어에 주입
+  private showDialogue(key: string) {
+    const script = this.cache.json.get('dialogue_act1') as
+      | DialogueScript
+      | undefined;
+    const lines = script?.[key];
+    if (!lines?.length) return;
+    useDialogueStore.getState().show(lines);
   }
 
   private showToast(msg: string, durationMs: number) {

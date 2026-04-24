@@ -11,17 +11,23 @@ export type StudentId = string;
 
 export type ActId = 1 | 2 | 3 | 4;
 
+// 팀 내 학생 슬롯 (입장 순 A→B→C→D 자동 배정)
+export type StudentSlot = 'A' | 'B' | 'C' | 'D';
+
+// 1막 경로 선택 (각 학생의 두 갈림길)
+export type PathChoice = 1 | 2;
+
 // ===== 학생 정보 (대기/게임 공통) =====
 export type StudentInfo = {
   id: StudentId;
   name: string;
   connected: boolean; // 현재 소켓 연결 여부 (재접속 대기 중이면 false)
+  slot?: StudentSlot; // 팀 배정 후에만 부여
 };
 
 // ===== 1막: 전력망 동기화 =====
 export type Act1State = {
-  selections: (1 | 2 | null)[]; // 학생 4명의 경로 선택
-  currentSum: Fraction | null;
+  selections: Record<StudentSlot, PathChoice | null>;
 };
 
 // ===== 2막: 냉각수 코어 식별 =====

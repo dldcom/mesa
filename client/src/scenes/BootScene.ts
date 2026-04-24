@@ -34,6 +34,9 @@ export default class BootScene extends Phaser.Scene {
     this.load.image('act1_bg', '/assets/maps/act1_power_grid.png');
     this.load.json('act1_data', '/assets/maps/act1_power_grid.json');
 
+    // 1막 대사 스크립트
+    this.load.json('dialogue_act1', '/assets/dialogue/act1.json');
+
     // 플레이어 캐릭터 (6프레임 × 4방향 = 24프레임 아틀라스)
     this.load.spritesheet('dragon', '/assets/characters/dragon.png', {
       frameWidth: 48,

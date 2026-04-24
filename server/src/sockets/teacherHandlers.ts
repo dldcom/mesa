@@ -4,6 +4,7 @@ import { sessionManager } from '../game/sessionManager';
 
 const sessionRoom = (code: string) => `session:${code}`;
 const teacherRoom = (code: string) => `teacher:${code}`;
+const teamRoom = (teamId: string) => `team:${teamId}`;
 
 // 세션 변경 시 모두에게 스냅샷 브로드캐스트
 const broadcastSessionState = (io: MesaIo, code: string) => {
@@ -76,13 +77,24 @@ export const registerTeacherHandlers = (io: MesaIo, socket: Socket) => {
       socket.emit('error', { code: 'START_FAILED', message: r.reason ?? '' });
       return;
     }
-    // 모든 참가자에게 게임 시작 알림 + 자기 팀 ID 전달은 클라가 스냅샷으로 알 수 있음
-    const snapshot = sessionManager.getSnapshot(code);
-    if (snapshot) {
-      for (const team of snapshot.teams) {
-        io.to(sessionRoom(code)).emit('game:started', { teamId: team.id });
+    if (!r.teamStates) return;
+
+    // 각 팀의 학생 소켓에 1) 팀 룸 합류 2) 자기 teamId+slot 개별 전달 3) 초기 팀 상태 브로드캐스트
+    for (const ts of r.teamStates) {
+      const members = sessionManager.getTeamSocketSlots(ts.teamId);
+      for (const m of members) {
+        const studentSocket = io.sockets.sockets.get(m.socketId);
+        if (!studentSocket) continue;
+        studentSocket.join(teamRoom(ts.teamId));
+        studentSocket.emit('game:started', {
+          teamId: ts.teamId,
+          slot: m.slot,
+        });
       }
+      // 초기 팀 상태 브로드캐스트 (빈 선택)
+      io.to(teamRoom(ts.teamId)).emit('team:state', ts);
     }
+
     broadcastSessionState(io, code);
     console.log(`[Teacher] started game for session ${code}`);
   });

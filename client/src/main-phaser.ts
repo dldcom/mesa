@@ -8,6 +8,8 @@ import Act1Scene from './scenes/Act1Scene';
 export type MesaGameInit = {
   parent: string;
   act?: 1 | 2 | 3 | 4; // 어느 막으로 시작할지 (기본: 1)
+  mode?: 'solo' | 'multi'; // solo: 로컬 판정, multi: 서버 권위
+  slot?: 'A' | 'B' | 'C' | 'D'; // multi 시 내 슬롯
 };
 
 export const createPhaserGame = (opts: MesaGameInit): Phaser.Game => {
@@ -21,7 +23,7 @@ export const createPhaserGame = (opts: MesaGameInit): Phaser.Game => {
       default: 'arcade',
       arcade: {
         gravity: { x: 0, y: 0 },
-        debug: false,
+        debug: import.meta.env.DEV,
       },
     },
     scale: {
@@ -32,7 +34,9 @@ export const createPhaserGame = (opts: MesaGameInit): Phaser.Game => {
     scene: [BootScene, Act1Scene],
   };
   const game = new Phaser.Game(config);
-  // 진입할 막 정보를 씬 간 공유 데이터로 저장
+  // 씬 간 공유: 막, 모드(solo/multi), 내 슬롯
   game.registry.set('startAct', opts.act ?? 1);
+  game.registry.set('mode', opts.mode ?? 'solo');
+  game.registry.set('mySlot', opts.slot ?? 'A');
   return game;
 };

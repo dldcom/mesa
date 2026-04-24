@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   SessionCode,
   StudentId,
+  StudentSlot,
   TeamId,
   SessionState,
 } from '@shared/types/game';
@@ -9,7 +10,10 @@ import type {
 // 세션 대기창 스냅샷 (학생·교사 공용 경량 타입)
 export type LightSnapshot = Pick<SessionState, 'phase' | 'unassignedStudents' | 'teams'>;
 
-// ============ localStorage 영속화 ============
+// ============ sessionStorage 영속화 ============
+// sessionStorage 를 쓰는 이유: 같은 시크릿 프로필의 여러 창이 localStorage 를 공유해서
+// 4명 테스트 시 마지막 창만 유지되는 문제가 있음. sessionStorage 는 탭별로 분리되고
+// F5 새로고침엔 살아남으므로, "탭 닫으면 세션 종료"로 의미가 더 깔끔해짐.
 const STORAGE_KEY = 'mesa_student_session';
 
 export type SavedStudentSession = {
@@ -19,11 +23,11 @@ export type SavedStudentSession = {
 };
 
 export const saveStudentSession = (data: SavedStudentSession) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 };
 
 export const loadStudentSession = (): SavedStudentSession | null => {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as SavedStudentSession;
@@ -35,7 +39,7 @@ export const loadStudentSession = (): SavedStudentSession | null => {
 };
 
 export const clearStudentSession = () => {
-  localStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(STORAGE_KEY);
 };
 
 // ============ Zustand 스토어 ============
@@ -48,11 +52,12 @@ type SessionStore = {
 
   gameStarted: boolean;
   myTeamId: TeamId | null;
+  mySlot: StudentSlot | null;
 
   setStudentIdentity: (code: SessionCode, studentId: StudentId, name: string) => void;
   setSessionCode: (code: SessionCode | null) => void;
   setSnapshot: (snap: LightSnapshot) => void;
-  markGameStarted: (teamId: TeamId) => void;
+  markGameStarted: (teamId: TeamId, slot: StudentSlot) => void;
   reset: () => void;
 };
 
@@ -63,6 +68,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   snapshot: null,
   gameStarted: false,
   myTeamId: null,
+  mySlot: null,
 
   setStudentIdentity: (code, studentId, name) =>
     set({ sessionCode: code, studentId, studentName: name }),
@@ -71,7 +77,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setSnapshot: (snap) => set({ snapshot: snap }),
 
-  markGameStarted: (teamId) => set({ gameStarted: true, myTeamId: teamId }),
+  markGameStarted: (teamId, slot) =>
+    set({ gameStarted: true, myTeamId: teamId, mySlot: slot }),
 
   reset: () =>
     set({
@@ -81,6 +88,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       snapshot: null,
       gameStarted: false,
       myTeamId: null,
+      mySlot: null,
     }),
 }));
 

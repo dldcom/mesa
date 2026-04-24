@@ -5,11 +5,23 @@ import type {
   SessionCode,
   StudentId,
   StudentInfo,
+  StudentSlot,
+  PathChoice,
   TeamId,
   TeamState,
   SessionState,
   SessionPhase,
 } from '../../../shared/types/game';
+import { evaluateAct1, type Act1Evaluation } from '../../../shared/lib/act1Logic';
+
+const SLOT_ORDER: StudentSlot[] = ['A', 'B', 'C', 'D'];
+
+// 팀 내 빈 슬롯 찾기 (A → B → C → D 순)
+const firstEmptySlot = (students: StudentInfo[]): StudentSlot | null => {
+  const taken = new Set(students.map((s) => s.slot).filter(Boolean));
+  for (const s of SLOT_ORDER) if (!taken.has(s)) return s;
+  return null;
+};
 
 // 혼동하기 쉬운 글자 (0/O, 1/I, Z, S 등) 제외
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRTUVWXY2346789';
@@ -29,7 +41,7 @@ const emptyTeamState = (teamId: TeamId, teamName: string): TeamState => ({
   teamName,
   students: [],
   currentAct: 1,
-  act1: { selections: [null, null, null, null], currentSum: null },
+  act1: { selections: { A: null, B: null, C: null, D: null } },
   act2: { scaleLeft: [], scaleRight: [], submittedCore: null, revealedClues: {} },
   act3: { overlayPair: null, passcode: [null, null, null, null] },
   act4: { levers: { 12: null, 3: null, 6: null, 9: null }, confirmedBy: [] },
@@ -40,6 +52,9 @@ const emptyTeamState = (teamId: TeamId, teamName: string): TeamState => ({
 
 export class SessionManager {
   private sessions = new Map<SessionCode, SessionState>();
+
+  // 게임 진행 중인 팀의 권위 있는 상태 (startGame 시 생성, 퍼즐 액션으로 갱신)
+  private teamStates = new Map<TeamId, TeamState>();
 
   // 학생 ↔ 세션/소켓 관계
   private studentToSession = new Map<StudentId, SessionCode>();
@@ -246,6 +261,7 @@ export class SessionManager {
     const team = session.teams.find((t) => t.id === teamId);
     if (!team) return false;
 
+    for (const s of team.students) delete s.slot;
     session.unassignedStudents.push(...team.students);
     session.teams = session.teams.filter((t) => t.id !== teamId);
     return true;
@@ -282,6 +298,10 @@ export class SessionManager {
     }
     if (!student) return { ok: false, reason: '학생을 찾을 수 없음' };
 
+    // 팀 내 빈 슬롯 부여
+    const slot = firstEmptySlot(team.students);
+    if (slot) student.slot = slot;
+
     team.students.push(student);
     return { ok: true };
   }
@@ -297,6 +317,7 @@ export class SessionManager {
       const found = t.students.find((s) => s.id === studentId);
       if (found) {
         t.students = t.students.filter((s) => s.id !== studentId);
+        delete found.slot; // 슬롯 해제
         session.unassignedStudents.push(found);
         return { ok: true };
       }
@@ -315,9 +336,15 @@ export class SessionManager {
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
 
+    const pushWithSlot = (team: { students: StudentInfo[] }, s: StudentInfo) => {
+      const slot = firstEmptySlot(team.students);
+      if (slot) s.slot = slot;
+      team.students.push(s);
+    };
+
     for (const team of session.teams) {
       while (team.students.length < 4 && pool.length > 0) {
-        team.students.push(pool.shift()!);
+        pushWithSlot(team, pool.shift()!);
       }
     }
 
@@ -329,7 +356,7 @@ export class SessionManager {
         students: [] as StudentInfo[],
       };
       while (newTeam.students.length < 4 && pool.length > 0) {
-        newTeam.students.push(pool.shift()!);
+        pushWithSlot(newTeam, pool.shift()!);
       }
       session.teams.push(newTeam);
     }
@@ -372,13 +399,63 @@ export class SessionManager {
 
     const teamStates: TeamState[] = session.teams.map((t) => {
       const ts = emptyTeamState(t.id, t.name);
-      // 연결 상태 그대로 복사
+      // 연결 상태 + 슬롯 그대로 복사
       ts.students = t.students.map((s) => ({ ...s }));
       ts.startedAt = Date.now();
+      this.teamStates.set(t.id, ts);
       return ts;
     });
 
     return { ok: true, teamStates };
+  }
+
+  // ===== 게임 상태 접근 =====
+  getTeamState(teamId: TeamId): TeamState | undefined {
+    return this.teamStates.get(teamId);
+  }
+
+  // 소켓으로부터 "내가 속한 팀 + 슬롯" 찾기 (게임 진행 중 전제)
+  getPlayerContextBySocket(
+    socketId: string
+  ): { teamState: TeamState; slot: StudentSlot } | null {
+    const studentId = this.socketToStudent.get(socketId);
+    if (!studentId) return null;
+    for (const ts of this.teamStates.values()) {
+      const stu = ts.students.find((s) => s.id === studentId);
+      if (stu?.slot) return { teamState: ts, slot: stu.slot };
+    }
+    return null;
+  }
+
+  // ===== 1막 액션 적용 =====
+  applyAct1Selection(
+    teamId: TeamId,
+    slot: StudentSlot,
+    choice: PathChoice | null
+  ): { teamState: TeamState; evaluation: Act1Evaluation | null } | null {
+    const ts = this.teamStates.get(teamId);
+    if (!ts) return null;
+    ts.act1.selections[slot] = choice;
+    const sel = ts.act1.selections;
+    const allFilled = sel.A && sel.B && sel.C && sel.D;
+    if (!allFilled) return { teamState: ts, evaluation: null };
+    const evaluation = evaluateAct1({
+      A: sel.A!,
+      B: sel.B!,
+      C: sel.C!,
+      D: sel.D!,
+    });
+    if (evaluation.status === 'solved' && !ts.completedActs.includes(1)) {
+      ts.completedActs.push(1);
+    }
+    return { teamState: ts, evaluation };
+  }
+
+  resetAct1(teamId: TeamId): TeamState | null {
+    const ts = this.teamStates.get(teamId);
+    if (!ts) return null;
+    ts.act1.selections = { A: null, B: null, C: null, D: null };
+    return ts;
   }
 
   endSession(code: SessionCode): boolean {
@@ -401,6 +478,21 @@ export class SessionManager {
       createdAt: s.createdAt,
       startedAt: s.startedAt,
     };
+  }
+
+  // 특정 팀의 학생들에 대해 (socketId, slot) 목록 — startGame 시 팀룸 합류용
+  getTeamSocketSlots(
+    teamId: TeamId
+  ): Array<{ socketId: string; slot: StudentSlot; studentId: StudentId }> {
+    const ts = this.teamStates.get(teamId);
+    if (!ts) return [];
+    const out: Array<{ socketId: string; slot: StudentSlot; studentId: StudentId }> = [];
+    for (const s of ts.students) {
+      if (!s.slot) continue;
+      const socketId = this.studentToSocket.get(s.id);
+      if (socketId) out.push({ socketId, slot: s.slot, studentId: s.id });
+    }
+    return out;
   }
 
   findTeamOfStudent(code: SessionCode, studentId: StudentId): TeamId | null {

@@ -6,11 +6,10 @@
 // 4명의 도착값 합 = 8/8(= 1) 이어야 해결.
 // 분모는 전 구간 8 고정.
 
-import type { Fraction } from '../types/game';
+import type { Fraction, PathChoice, StudentSlot } from '../types/game';
 import { add, equals, f } from './fraction';
 
-export type StudentSlot = 'A' | 'B' | 'C' | 'D';
-export type PathChoice = 1 | 2;
+export type { PathChoice, StudentSlot };
 
 type PathDef = {
   op: '+' | '-';

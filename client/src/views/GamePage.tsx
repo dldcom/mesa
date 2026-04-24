@@ -1,10 +1,14 @@
 // Phaser 게임을 마운트하는 React 컨테이너.
-// 현재는 디버그 모드로 Act 1 을 바로 로드 (세션/팀 연동은 추후).
+// 세션에서 들어왔으면 multi 모드 (서버 권위 판정), URL 직접 접근이면 solo 모드 (로컬 판정).
 
 import { useEffect, useRef, useState } from 'react';
 import type Phaser from 'phaser';
 import { createPhaserGame } from '@/main-phaser';
 import { gameEventBus } from '@/lib/gameEventBus';
+import DialogueBox from '@/components/DialogueBox';
+import { getSocket } from '@/services/socket';
+import { useSessionStore } from '@/store/useSessionStore';
+import type { TeamState } from '@shared/types/game';
 
 const GAME_CONTAINER_ID = 'mesa-game-container';
 
@@ -12,15 +16,18 @@ export default function GamePage() {
   const gameRef = useRef<Phaser.Game | null>(null);
   const [proximityLabel, setProximityLabel] = useState<string | null>(null);
 
-  useEffect(() => {
-    // React StrictMode 에서 두 번 마운트 방지
-    if (gameRef.current) return;
+  const myTeamId = useSessionStore((s) => s.myTeamId);
+  const mySlot = useSessionStore((s) => s.mySlot);
 
-    // 컨테이너 DOM 이 준비될 때까지 한 틱 기다림
+  useEffect(() => {
+    if (gameRef.current) return;
     const id = requestAnimationFrame(() => {
+      const mode = myTeamId && mySlot ? 'multi' : 'solo';
       gameRef.current = createPhaserGame({
         parent: GAME_CONTAINER_ID,
         act: 1,
+        mode,
+        slot: mySlot ?? 'A',
       });
     });
 
@@ -29,9 +36,9 @@ export default function GamePage() {
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
-  }, []);
+  }, [myTeamId, mySlot]);
 
-  // Phaser → React 이벤트 구독 (근접 안내 버블)
+  // Phaser → React 이벤트 (근접 안내 버블)
   useEffect(() => {
     const onEnter = (p: { npcKey: string; label?: string }) =>
       setProximityLabel(p.label ?? `${p.npcKey} 에게 다가감 — Space 또는 탭`);
@@ -46,14 +53,38 @@ export default function GamePage() {
     };
   }, []);
 
+  // 서버 → React → Phaser 이벤트 릴레이 (멀티 모드 전용)
+  useEffect(() => {
+    if (!myTeamId) return;
+    const socket = getSocket();
+
+    const onTeamState = (teamState: TeamState) =>
+      gameEventBus.emit('server:teamState', { teamState });
+    const onSolved = (data: { act: 1 | 2 | 3 | 4 }) =>
+      gameEventBus.emit('server:puzzleSolved', { act: data.act });
+    const onFailed = (data: { act: 1 | 2 | 3 | 4; reason: string }) =>
+      gameEventBus.emit('server:puzzleFailed', data);
+
+    socket.on('team:state', onTeamState);
+    socket.on('puzzle:solved', onSolved);
+    socket.on('puzzle:failed', onFailed);
+
+    return () => {
+      socket.off('team:state', onTeamState);
+      socket.off('puzzle:solved', onSolved);
+      socket.off('puzzle:failed', onFailed);
+    };
+  }, [myTeamId]);
+
   return (
     <div style={styles.root}>
       <div id={GAME_CONTAINER_ID} style={styles.gameContainer} />
 
-      {/* NPC 근처 진입 시 안내 버블 (Phaser 캔버스 위 absolute) */}
       {proximityLabel && (
         <div style={styles.proximityBubble}>{proximityLabel}</div>
       )}
+
+      <DialogueBox />
     </div>
   );
 }

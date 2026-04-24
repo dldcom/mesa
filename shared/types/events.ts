@@ -4,6 +4,7 @@ import type {
   ActId,
   SessionCode,
   StudentId,
+  StudentSlot,
   TeamId,
   TeamState,
   SessionState,
@@ -22,7 +23,7 @@ export interface ServerToClientEvents {
   'team:state': (state: TeamState) => void;
 
   // 게임 진행
-  'game:started': (data: { teamId: TeamId }) => void;
+  'game:started': (data: { teamId: TeamId; slot: StudentSlot }) => void;
   'puzzle:solved': (data: { act: ActId; nextAct: ActId | null }) => void;
   'puzzle:failed': (data: { act: ActId; reason: string }) => void;
 
@@ -58,7 +59,7 @@ export interface ClientToServerEvents {
 
 // ============ 막별 퍼즐 조작 ============
 export type PuzzleAction =
-  | { act: 1; type: 'selectPath'; choice: 1 | 2 }
+  | { act: 1; type: 'selectPath'; choice: 1 | 2 | null }
   | { act: 1; type: 'confirm' }
   | { act: 2; type: 'placeCoreOnScale'; core: CoreColor; side: 'left' | 'right' }
   | { act: 2; type: 'clearScale' }
