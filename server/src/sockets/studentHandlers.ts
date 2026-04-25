@@ -31,6 +31,21 @@ export const registerStudentHandlers = (io: MesaIo, socket: Socket) => {
     broadcastSessionState(io, sessionCode);
   });
 
+  // 학생이 캐릭터를 선택/변경 (팀 배정 후에만 허용)
+  socket.on('student:selectCharacter', ({ character }) => {
+    const studentId = sessionManager.getStudentIdBySocket(socket.id);
+    if (!studentId) return;
+    const r = sessionManager.setStudentCharacter(studentId, character ?? null);
+    if (!r.ok) {
+      socket.emit('error', {
+        code: 'CHARACTER_SELECT_FAILED',
+        message: r.reason ?? '',
+      });
+      return;
+    }
+    if (r.sessionCode) broadcastSessionState(io, r.sessionCode);
+  });
+
   // 학생이 명시적으로 나감 (예: "방 나가기" 버튼)
   socket.on('student:leave', () => {
     const studentId = sessionManager.getStudentIdBySocket(socket.id);

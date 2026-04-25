@@ -30,18 +30,23 @@ export default class BootScene extends Phaser.Scene {
       bar.width = 400 * value;
     });
 
-    // 맵 (1막 전력망 동기화)
+    // 맵 (프롤로그 + 1막 전력망 동기화)
+    this.load.image('prologue_bg', '/assets/maps/prologue.png');
     this.load.image('act1_bg', '/assets/maps/act1_power_grid.png');
     this.load.json('act1_data', '/assets/maps/act1_power_grid.json');
 
-    // 1막 대사 스크립트
+    // 1막/2막 대사 스크립트
     this.load.json('dialogue_act1', '/assets/dialogue/act1.json');
+    this.load.json('dialogue_act2', '/assets/dialogue/act2.json');
 
-    // 플레이어 캐릭터 (6프레임 × 4방향 = 24프레임 아틀라스)
-    this.load.spritesheet('dragon', '/assets/characters/dragon.png', {
-      frameWidth: 48,
-      frameHeight: 64,
-    });
+    // 플레이어 캐릭터 4종 (각 6프레임 × 4방향 = 24프레임 아틀라스)
+    // 텍스처 키 = 캐릭터 id. 학생이 고른 character 로 스프라이트 키 결정.
+    for (const id of ['dragon', 'mibam', 'kotbam', 'subam'] as const) {
+      this.load.spritesheet(id, `/assets/characters/${id}.png`, {
+        frameWidth: 48,
+        frameHeight: 64,
+      });
+    }
 
     // NPC
     this.load.spritesheet('researcher', '/assets/npcs/researcher.png', {
@@ -71,7 +76,8 @@ export default class BootScene extends Phaser.Scene {
   create() {
     const startAct = this.game.registry.get('startAct') as 1 | 2 | 3 | 4;
     if (startAct === 1) {
-      this.scene.start('Act1Scene');
+      // 1막은 프롤로그 컷씬을 거쳐 진입
+      this.scene.start('PrologueScene');
     } else {
       // 다른 막은 아직 미구현
       this.scene.start('Act1Scene');

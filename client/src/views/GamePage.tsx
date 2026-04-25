@@ -7,6 +7,8 @@ import { createPhaserGame } from '@/main-phaser';
 import { gameEventBus } from '@/lib/gameEventBus';
 import DialogueBox from '@/components/DialogueBox';
 import Act1StatusPanel from '@/components/Act1StatusPanel';
+import Act2CluePanel from '@/components/Act2CluePanel';
+import TouchControls from '@/components/TouchControls';
 import { getSocket } from '@/services/socket';
 import { useSessionStore } from '@/store/useSessionStore';
 import type { TeamState } from '@shared/types/game';
@@ -19,6 +21,7 @@ export default function GamePage() {
 
   const myTeamId = useSessionStore((s) => s.myTeamId);
   const mySlot = useSessionStore((s) => s.mySlot);
+  const myCharacter = useSessionStore((s) => s.myCharacter);
 
   useEffect(() => {
     if (gameRef.current) return;
@@ -29,6 +32,7 @@ export default function GamePage() {
         act: 1,
         mode,
         slot: mySlot ?? 'A',
+        character: myCharacter ?? 'dragon',
       });
     });
 
@@ -37,7 +41,7 @@ export default function GamePage() {
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
-  }, [myTeamId, mySlot]);
+  }, [myTeamId, mySlot, myCharacter]);
 
   // Phaser → React 이벤트 (근접 안내 버블)
   useEffect(() => {
@@ -95,7 +99,9 @@ export default function GamePage() {
       )}
 
       <Act1StatusPanel />
+      <Act2CluePanel />
       <DialogueBox />
+      <TouchControls />
     </div>
   );
 }

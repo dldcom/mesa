@@ -17,8 +17,15 @@ import {
   type StudentSlot,
   type Act1Evaluation,
 } from '@shared/lib/act1Logic';
-import type { TeamState } from '@shared/types/game';
+import type { TeamState, Character } from '@shared/types/game';
 import { format } from '@shared/lib/fraction';
+import {
+  animKey,
+  ensureCharacterAnimations,
+  getSlotCharacters,
+  readMovementInput,
+  type WalkDir,
+} from './characterAnims';
 
 const TILE_SIZE = 32;
 const MAP_WIDTH = 64;
@@ -114,6 +121,7 @@ type Door = {
 
 export default class Act1Scene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
+  private selfLabel!: Phaser.GameObjects.Text;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private debugText!: Phaser.GameObjects.Text;
@@ -144,6 +152,10 @@ export default class Act1Scene extends Phaser.Scene {
   };
   private mode: 'solo' | 'multi' = 'solo';
   private currentSlot: StudentSlot = 'A'; // multi: 서버가 배정, solo: 1/2/3/4 로 변경
+  private myCharacter: Character = 'dragon';
+  private slotCharacters: Record<StudentSlot, Character> = {
+    A: 'dragon', B: 'dragon', C: 'dragon', D: 'dragon',
+  };
   private resolved = false; // 성공 후 잠금
 
   // 멀티 모드 — 같은 팀 다른 플레이어
@@ -158,10 +170,14 @@ export default class Act1Scene extends Phaser.Scene {
   }
 
   create() {
-    // 0. 모드 결정
+    // 0. 모드 + 슬롯 + 캐릭터 결정
     this.mode = (this.registry.get('mode') as 'solo' | 'multi') ?? 'solo';
     this.currentSlot =
       (this.registry.get('mySlot') as StudentSlot | undefined) ?? 'A';
+    this.myCharacter =
+      (this.registry.get('myCharacter') as Character | undefined) ?? 'dragon';
+    this.slotCharacters = getSlotCharacters();
+    this.slotCharacters[this.currentSlot] = this.myCharacter;
 
     // 1. 배경
     const bgBelow = this.add.image(0, 0, 'act1_bg');
@@ -223,13 +239,25 @@ export default class Act1Scene extends Phaser.Scene {
     this.player = this.physics.add.sprite(
       playerSpawn.x + TILE_SIZE / 2,
       playerSpawn.y + TILE_SIZE / 2,
-      'dragon',
+      this.myCharacter,
       0
     );
     this.player.setDepth(10);
     this.player.setCollideWorldBounds(true);
     this.player.setSize(32, 20);
     this.player.setOffset(8, 40);
+
+    // 4-a-1. 본인 슬롯 라벨 (청록 — 원격 플레이어의 노란색과 구분)
+    this.selfLabel = this.add.text(this.player.x, this.player.y - 36, this.currentSlot, {
+      color: '#22d3ee',
+      fontSize: '11px',
+      fontFamily: 'Pretendard, sans-serif',
+      fontStyle: 'bold',
+      backgroundColor: '#0f172acc',
+      padding: { x: 4, y: 2 },
+    });
+    this.selfLabel.setOrigin(0.5, 1);
+    this.selfLabel.setDepth(11);
 
     // 4-b. NPC
     const npcSpawns = spawns.filter((o) => o.name.startsWith('npc_'));
@@ -286,22 +314,27 @@ export default class Act1Scene extends Phaser.Scene {
       sprite.on('pointerdown', () => this.tryPullLever(lever));
 
       // 라벨: 슬롯 + 연산
+      // pixelArt + 카메라 zoom 1.5 환경에서 작은 폰트가 흐려져서
+      // resolution 을 3 으로 올리고 폰트도 키움 (내부 캔버스가 3배로 그려짐 → 줌해도 선명)
       const path = ACT1_PUZZLE[slot].paths[choice];
       const sym = choice === 1 ? '①' : '②';
       this.add
         .text(
           cx,
-          cy - 20,
+          cy - 22,
           `${slot} ${sym} ${path.op}${format(path.operand)}`,
           {
             color: '#fde68a',
-            fontSize: '10px',
-            backgroundColor: '#00000099',
-            padding: { x: 3, y: 2 },
+            fontSize: '14px',
+            fontFamily: 'Pretendard, sans-serif',
+            fontStyle: 'bold',
+            backgroundColor: '#000000cc',
+            padding: { x: 6, y: 3 },
           }
         )
         .setOrigin(0.5, 1)
-        .setDepth(11);
+        .setDepth(11)
+        .setResolution(3);
     }
 
     // 4-d. 문
@@ -376,7 +409,6 @@ export default class Act1Scene extends Phaser.Scene {
           const p = this.add.image(closedPositions[i].x, closedPositions[i].y, key);
           p.setScale(scaleX, scaleY);
           p.setDepth(11);
-          p.setTint(0xef4444);
           p.setMask(mask);
           panels.push(p);
           expandedClosed.push(closedPositions[i]);
@@ -393,12 +425,10 @@ export default class Act1Scene extends Phaser.Scene {
           const lower = this.add.image(pos.x, pos.y, key);
           lower.setScale(scaleX, scaleY);
           lower.setDepth(9); // 플레이어(10) 아래
-          lower.setTint(0xef4444);
 
           const upper = this.add.image(pos.x, pos.y, key);
           upper.setScale(scaleX, scaleY);
           upper.setDepth(11); // 플레이어(10) 위
-          upper.setTint(0xef4444);
           upper.setMask(upperMask);
 
           panels.push(lower, upper);
@@ -506,24 +536,8 @@ export default class Act1Scene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
     this.cameras.main.setZoom(1.5);
 
-    // 7. 애니메이션
-    const dirs = [
-      { key: 'walk_down', start: 0, end: 5 },
-      { key: 'walk_up', start: 6, end: 11 },
-      { key: 'walk_right', start: 12, end: 17 },
-      { key: 'walk_left', start: 18, end: 23 },
-    ];
-    for (const d of dirs) {
-      this.anims.create({
-        key: d.key,
-        frames: this.anims.generateFrameNumbers('dragon', {
-          start: d.start,
-          end: d.end,
-        }),
-        frameRate: 10,
-        repeat: -1,
-      });
-    }
+    // 7. 애니메이션 (4종 캐릭터 모두 등록 — 키: <character>:walk_<dir>)
+    ensureCharacterAnimations(this);
 
     // 8. 입력
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -544,6 +558,13 @@ export default class Act1Scene extends Phaser.Scene {
         );
       }
     }
+
+    // 디버그: 0 키로 1막 즉시 클리어 → 2막으로 점프 (개발 편의)
+    this.input.keyboard!.on('keydown-ZERO', () => {
+      if (this.resolved) return;
+      this.showToast('🔧 [DEBUG] 1막 클리어 강제 발동', 1000);
+      this.playVictoryCore();
+    });
 
     // 9. HUD — 좌상단
     this.hudText = this.add.text(10, 10, '', {
@@ -647,13 +668,14 @@ export default class Act1Scene extends Phaser.Scene {
     slot: StudentSlot;
     x: number;
     y: number;
-    anim: string | null;
+    anim: string | null; // 방향 문자열 (left/right/up/down) 또는 null
     frame: number;
   }) {
     if (p.slot === this.currentSlot) return; // 자기 자신은 무시
+    const character = this.slotCharacters[p.slot];
     let rp = this.remotePlayers.get(p.slot);
     if (!rp) {
-      const sprite = this.add.sprite(p.x, p.y, 'dragon', p.frame);
+      const sprite = this.add.sprite(p.x, p.y, character, p.frame);
       sprite.setDepth(10);
       sprite.setAlpha(0.85);
       const label = this.add.text(p.x, p.y - 36, p.slot, {
@@ -681,8 +703,9 @@ export default class Act1Scene extends Phaser.Scene {
       rp.anim = p.anim;
       rp.frame = p.frame;
     }
-    if (p.anim) rp.sprite.anims.play(p.anim, true);
-    else {
+    if (p.anim) {
+      rp.sprite.anims.play(animKey(character, p.anim as WalkDir), true);
+    } else {
       rp.sprite.anims.stop();
       rp.sprite.setFrame(p.frame);
     }
@@ -691,6 +714,10 @@ export default class Act1Scene extends Phaser.Scene {
   // 서버가 보낸 팀 상태를 로컬 렌더에 반영
   private applyServerState(ts: TeamState) {
     this.selections = { ...ts.act1.selections };
+    // 슬롯-캐릭터 매핑 동기화 (서버가 권위. 픽 안 한 슬롯은 dragon 으로 자동배정 후 송신됨)
+    for (const s of ts.students) {
+      if (s.slot && s.character) this.slotCharacters[s.slot] = s.character;
+    }
     // 레버 비주얼 동기화
     for (const lever of this.levers) {
       const want = this.selections[lever.slot] === lever.choice;
@@ -714,32 +741,19 @@ export default class Act1Scene extends Phaser.Scene {
       return;
     }
 
-    let vx = 0;
-    let vy = 0;
-    let anim: string | null = null;
-
-    if (this.cursors.left.isDown) {
-      vx = -PLAYER_SPEED;
-      anim = 'walk_left';
-    } else if (this.cursors.right.isDown) {
-      vx = PLAYER_SPEED;
-      anim = 'walk_right';
-    }
-    if (this.cursors.up.isDown) {
-      vy = -PLAYER_SPEED;
-      anim = anim ?? 'walk_up';
-    } else if (this.cursors.down.isDown) {
-      vy = PLAYER_SPEED;
-      anim = anim ?? 'walk_down';
-    }
+    const { vx, vy, dir } = readMovementInput(this.cursors, PLAYER_SPEED);
 
     body.setVelocity(vx, vy);
 
-    if (anim) this.player.anims.play(anim, true);
+    if (dir) this.player.anims.play(animKey(this.myCharacter, dir), true);
     else {
       this.player.anims.stop();
       this.player.setFrame(0);
     }
+
+    // 본인 라벨이 플레이어를 따라다니게
+    this.selfLabel.x = this.player.x;
+    this.selfLabel.y = this.player.y - 36;
 
     // 근접 감지 — NPC, 레버, 문, 배터리
     this.updateNpcProximity();
@@ -761,21 +775,22 @@ export default class Act1Scene extends Phaser.Scene {
     );
 
     // 멀티: 내 위치 브로드캐스트 (변화 있을 때 + 100ms 쓰로틀)
+    // anim 은 캐릭터 무관한 방향 문자열(left/right/up/down) 만 보냄 — 수신자가 자기 캐릭터로 키 조립.
     if (this.mode === 'multi') {
       const now = this.time.now;
       const moved =
         Math.abs(this.player.x - this.lastBroadcastX) > 1 ||
         Math.abs(this.player.y - this.lastBroadcastY) > 1 ||
-        anim !== this.lastBroadcastAnim;
+        dir !== this.lastBroadcastAnim;
       if (moved && now - this.lastBroadcast > 100) {
         this.lastBroadcast = now;
         this.lastBroadcastX = this.player.x;
         this.lastBroadcastY = this.player.y;
-        this.lastBroadcastAnim = anim;
+        this.lastBroadcastAnim = dir;
         getSocket().emit('player:move', {
           x: this.player.x,
           y: this.player.y,
-          anim,
+          anim: dir,
           frame: this.player.frame.name as unknown as number,
         });
       }
@@ -955,6 +970,7 @@ export default class Act1Scene extends Phaser.Scene {
     // 다른 슬롯 레버 클릭 시 슬롯 자동 전환 (모든 문 닫고 색상 재계산)
     if (lever.slot !== this.currentSlot) {
       this.currentSlot = lever.slot;
+      this.selfLabel.setText(lever.slot);
       for (const d of this.doors) this.setDoorOpen(d, false);
       this.refreshDoorLocks();
     }
@@ -985,6 +1001,7 @@ export default class Act1Scene extends Phaser.Scene {
   private switchSlot(slot: StudentSlot) {
     if (this.resolved) return;
     this.currentSlot = slot;
+    this.selfLabel.setText(slot);
     for (const d of this.doors) this.setDoorOpen(d, false);
     this.updateHud();
     this.refreshDoorLocks();
@@ -992,13 +1009,11 @@ export default class Act1Scene extends Phaser.Scene {
   }
 
   // ── 문 상태 ──────────────────────────────
-  // locked: 슬롯 매칭 기반 (색상만 반영). 열림/닫힘과 독립.
+  // locked: 슬롯 매칭 기반 (Space 상호작용 시 거부). 열림/닫힘과 독립.
   // isOpen: Space 상호작용으로 토글 (패널 위치 + 충돌 반영).
   private refreshDoorLocks() {
     for (const door of this.doors) {
       door.locked = door.slot !== this.currentSlot;
-      const tint = door.locked ? 0xef4444 : 0x10b981;
-      for (const p of door.panels) p.setTint(tint);
     }
   }
 
@@ -1111,10 +1126,24 @@ export default class Act1Scene extends Phaser.Scene {
     }
     for (const door of this.doors) {
       door.locked = false;
-      for (const p of door.panels) p.setTint(0x10b981);
       this.setDoorOpen(door, true);
     }
     gameEventBus.emit('act1:solved');
+
+    // 승리 대사가 끝나면 2막으로 전환
+    this.scheduleAct2Transition();
+  }
+
+  private scheduleAct2Transition() {
+    // victory 대사가 다 끝난 시점을 useDialogueStore 구독으로 감지
+    const unsub = useDialogueStore.subscribe((state, prev) => {
+      if (prev.open && !state.open) {
+        unsub();
+        this.cameras.main.fade(700, 0, 0, 0);
+        this.time.delayedCall(750, () => this.scene.start('Act2Scene'));
+      }
+    });
+    this.events.once('shutdown', unsub);
   }
 
   private playFailureCore(status: 'overload' | 'shortage') {

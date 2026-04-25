@@ -5,6 +5,7 @@ import type {
   StudentSlot,
   TeamId,
   SessionState,
+  Character,
 } from '@shared/types/game';
 
 // 세션 대기창 스냅샷 (학생·교사 공용 경량 타입)
@@ -53,11 +54,12 @@ type SessionStore = {
   gameStarted: boolean;
   myTeamId: TeamId | null;
   mySlot: StudentSlot | null;
+  myCharacter: Character | null;
 
   setStudentIdentity: (code: SessionCode, studentId: StudentId, name: string) => void;
   setSessionCode: (code: SessionCode | null) => void;
   setSnapshot: (snap: LightSnapshot) => void;
-  markGameStarted: (teamId: TeamId, slot: StudentSlot) => void;
+  markGameStarted: (teamId: TeamId, slot: StudentSlot, character: Character) => void;
   reset: () => void;
 };
 
@@ -69,6 +71,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   gameStarted: false,
   myTeamId: null,
   mySlot: null,
+  myCharacter: null,
 
   setStudentIdentity: (code, studentId, name) =>
     set({ sessionCode: code, studentId, studentName: name }),
@@ -77,8 +80,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setSnapshot: (snap) => set({ snapshot: snap }),
 
-  markGameStarted: (teamId, slot) =>
-    set({ gameStarted: true, myTeamId: teamId, mySlot: slot }),
+  markGameStarted: (teamId, slot, character) =>
+    set({ gameStarted: true, myTeamId: teamId, mySlot: slot, myCharacter: character }),
 
   reset: () =>
     set({
@@ -89,6 +92,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       gameStarted: false,
       myTeamId: null,
       mySlot: null,
+      myCharacter: null,
     }),
 }));
 

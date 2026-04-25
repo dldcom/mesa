@@ -79,19 +79,21 @@ export const registerTeacherHandlers = (io: MesaIo, socket: Socket) => {
     }
     if (!r.teamStates) return;
 
-    // 각 팀의 학생 소켓에 1) 팀 룸 합류 2) 자기 teamId+slot 개별 전달 3) 초기 팀 상태 브로드캐스트
+    // 각 팀의 학생 소켓에 1) 팀 룸 합류 2) 자기 teamId+slot+character 개별 전달 3) 초기 팀 상태 브로드캐스트
     for (const ts of r.teamStates) {
       const members = sessionManager.getTeamSocketSlots(ts.teamId);
       for (const m of members) {
         const studentSocket = io.sockets.sockets.get(m.socketId);
         if (!studentSocket) continue;
         studentSocket.join(teamRoom(ts.teamId));
+        const myStudent = ts.students.find((s) => s.id === m.studentId);
         studentSocket.emit('game:started', {
           teamId: ts.teamId,
           slot: m.slot,
+          character: myStudent?.character ?? 'dragon',
         });
       }
-      // 초기 팀 상태 브로드캐스트 (빈 선택)
+      // 초기 팀 상태 브로드캐스트 (빈 선택). team:state 의 students 안에 각자 character 포함됨.
       io.to(teamRoom(ts.teamId)).emit('team:state', ts);
     }
 

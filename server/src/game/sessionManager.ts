@@ -11,8 +11,18 @@ import type {
   TeamState,
   SessionState,
   SessionPhase,
+  Character,
 } from '../../../shared/types/game';
 import { evaluateAct1, type Act1Evaluation } from '../../../shared/lib/act1Logic';
+import {
+  evaluateAct2,
+  type Act2Evaluation,
+  ACT2_CORE_COLORS,
+  ACT2_CORE_WEIGHTS,
+} from '../../../shared/lib/act2Logic';
+import { CHARACTER_IDS } from '../../../shared/lib/characters';
+import type { CoreColor, ScaleTilt, Act2State } from '../../../shared/types/game';
+import { compare } from '../../../shared/lib/fraction';
 
 const SLOT_ORDER: StudentSlot[] = ['A', 'B', 'C', 'D'];
 
@@ -42,7 +52,7 @@ const emptyTeamState = (teamId: TeamId, teamName: string): TeamState => ({
   students: [],
   currentAct: 1,
   act1: { selections: { A: null, B: null, C: null, D: null } },
-  act2: { scaleLeft: [], scaleRight: [], submittedCore: null, revealedClues: {} },
+  act2: { scaleLeft: null, scaleRight: null, scaleTilt: 'empty', submittedCore: null },
   act3: { overlayPair: null, passcode: [null, null, null, null] },
   act4: { levers: { 12: null, 3: null, 6: null, 9: null }, confirmedBy: [] },
   completedActs: [],
@@ -302,8 +312,73 @@ export class SessionManager {
     const slot = firstEmptySlot(team.students);
     if (slot) student.slot = slot;
 
+    // 새 팀 안에 같은 캐릭터를 이미 누가 골랐다면 충돌 → 본인의 캐릭터 클리어
+    if (student.character) {
+      const taken = new Set(team.students.map((s) => s.character).filter(Boolean));
+      if (taken.has(student.character)) delete student.character;
+    }
+
     team.students.push(student);
     return { ok: true };
+  }
+
+  // ===== 캐릭터 선택 =====
+  // 팀 배정 후에만 허용. 같은 팀 안에서는 유니크.
+  setStudentCharacter(
+    studentId: StudentId,
+    character: Character | null
+  ): { ok: boolean; reason?: string; sessionCode?: SessionCode } {
+    const code = this.studentToSession.get(studentId);
+    if (!code) return { ok: false, reason: '세션을 찾을 수 없습니다.' };
+    const session = this.sessions.get(code);
+    if (!session) return { ok: false, reason: '세션 없음' };
+
+    if (character !== null && !(CHARACTER_IDS as readonly string[]).includes(character)) {
+      return { ok: false, reason: '알 수 없는 캐릭터입니다.' };
+    }
+
+    // 팀 안에 있는지 (= 배정됐는지) 확인
+    const team = session.teams.find((t) =>
+      t.students.some((s) => s.id === studentId)
+    );
+    if (!team) {
+      return { ok: false, reason: '팀에 배정된 후에 캐릭터를 고를 수 있어요.', sessionCode: code };
+    }
+    const student = team.students.find((s) => s.id === studentId)!;
+
+    if (character === null) {
+      delete student.character;
+      return { ok: true, sessionCode: code };
+    }
+
+    // 같은 팀 내 충돌 검사
+    const conflict = team.students.find(
+      (s) => s.id !== studentId && s.character === character
+    );
+    if (conflict) {
+      return { ok: false, reason: `${conflict.name} 친구가 이미 선택했어요.`, sessionCode: code };
+    }
+
+    student.character = character;
+    return { ok: true, sessionCode: code };
+  }
+
+  // 게임 시작 직전 호출: 각 팀 안에서 캐릭터를 안 고른 학생에게 남은 캐릭터 중 하나 무작위 배정.
+  private autoAssignCharacters(session: SessionState): void {
+    for (const team of session.teams) {
+      const taken = new Set(team.students.map((s) => s.character).filter(Boolean));
+      const available = CHARACTER_IDS.filter((c) => !taken.has(c));
+      // 셔플
+      for (let i = available.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [available[i], available[j]] = [available[j], available[i]];
+      }
+      for (const s of team.students) {
+        if (s.character) continue;
+        const next = available.shift();
+        if (next) s.character = next;
+      }
+    }
   }
 
   unassignStudent(
@@ -394,6 +469,8 @@ export class SessionManager {
     if (!check.ok) return check;
 
     const session = this.sessions.get(code)!;
+    // 캐릭터 미선택자에게 자동 배정 (팀 내 유니크 보장)
+    this.autoAssignCharacters(session);
     session.phase = 'playing';
     session.startedAt = Date.now();
 
@@ -455,6 +532,71 @@ export class SessionManager {
     const ts = this.teamStates.get(teamId);
     if (!ts) return null;
     ts.act1.selections = { A: null, B: null, C: null, D: null };
+    return ts;
+  }
+
+  // ===== 2막 액션 적용 =====
+  // 양팔 저울 기울기 계산 — 클라가 무게를 모르므로 서버가 비교 결과만 알려줌.
+  private computeScaleTilt(act2: Act2State): ScaleTilt {
+    if (!act2.scaleLeft && !act2.scaleRight) return 'empty';
+    if (!act2.scaleLeft) return 'right';   // 왼쪽 비어있음 → 오른쪽으로 기움
+    if (!act2.scaleRight) return 'left';
+    const cmp = compare(
+      ACT2_CORE_WEIGHTS[act2.scaleLeft],
+      ACT2_CORE_WEIGHTS[act2.scaleRight]
+    );
+    if (cmp > 0) return 'left';
+    if (cmp < 0) return 'right';
+    return 'balanced';
+  }
+
+  // 양팔 저울에 코어 올리기. side='left'|'right'. 같은 코어가 다른 쪽에 있으면 자동 제거.
+  // 같은 쪽에 다른 코어가 있으면 교체 (한 쪽 1개 정책).
+  applyAct2Place(
+    teamId: TeamId,
+    color: CoreColor,
+    side: 'left' | 'right'
+  ): TeamState | null {
+    const ts = this.teamStates.get(teamId);
+    if (!ts) return null;
+    if (!(ACT2_CORE_COLORS as readonly string[]).includes(color)) return null;
+    // 같은 색이 반대편에 있다면 거기서 제거
+    if (side === 'left' && ts.act2.scaleRight === color) ts.act2.scaleRight = null;
+    if (side === 'right' && ts.act2.scaleLeft === color) ts.act2.scaleLeft = null;
+    if (side === 'left') ts.act2.scaleLeft = color;
+    else ts.act2.scaleRight = color;
+    ts.act2.scaleTilt = this.computeScaleTilt(ts.act2);
+    return ts;
+  }
+
+  applyAct2Remove(teamId: TeamId, side: 'left' | 'right'): TeamState | null {
+    const ts = this.teamStates.get(teamId);
+    if (!ts) return null;
+    if (side === 'left') ts.act2.scaleLeft = null;
+    else ts.act2.scaleRight = null;
+    ts.act2.scaleTilt = this.computeScaleTilt(ts.act2);
+    return ts;
+  }
+
+  applyAct2Submit(
+    teamId: TeamId,
+    color: CoreColor
+  ): { teamState: TeamState; evaluation: Act2Evaluation } | null {
+    const ts = this.teamStates.get(teamId);
+    if (!ts) return null;
+    if (!(ACT2_CORE_COLORS as readonly string[]).includes(color)) return null;
+    const evaluation = evaluateAct2(color);
+    ts.act2.submittedCore = color;
+    if (evaluation.status === 'solved' && !ts.completedActs.includes(2)) {
+      ts.completedActs.push(2);
+    }
+    return { teamState: ts, evaluation };
+  }
+
+  resetAct2Submission(teamId: TeamId): TeamState | null {
+    const ts = this.teamStates.get(teamId);
+    if (!ts) return null;
+    ts.act2.submittedCore = null;
     return ts;
   }
 

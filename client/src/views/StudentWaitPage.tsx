@@ -7,7 +7,8 @@ import {
   isUnassigned,
   type LightSnapshot,
 } from '@/store/useSessionStore';
-import type { StudentSlot } from '@shared/types/game';
+import type { StudentSlot, Character } from '@shared/types/game';
+import CharacterPicker from '@/components/CharacterPicker';
 
 export default function StudentWaitPage() {
   const navigate = useNavigate();
@@ -27,9 +28,13 @@ export default function StudentWaitPage() {
     const socket = getSocket();
 
     const onState = (s: LightSnapshot) => setSnapshot(s);
-    const onGameStarted = (data: { teamId: string; slot: StudentSlot }) => {
+    const onGameStarted = (data: {
+      teamId: string;
+      slot: StudentSlot;
+      character: Character;
+    }) => {
       // 서버가 이미 내 소켓에만 보내므로 바로 저장 + 이동
-      markGameStarted(data.teamId, data.slot);
+      markGameStarted(data.teamId, data.slot, data.character);
       navigate('/game');
     };
 
@@ -91,6 +96,8 @@ export default function StudentWaitPage() {
           </p>
         </div>
       )}
+
+      <CharacterPicker />
 
       {snapshot && (
         <div style={{ marginTop: 32, color: '#64748b', fontSize: 12 }}>

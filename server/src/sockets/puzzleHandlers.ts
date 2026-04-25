@@ -53,7 +53,49 @@ export const registerPuzzleHandlers = (io: MesaIo, socket: Socket) => {
     // 1막 — 확정 버튼 (현재 selectPath 만으로 자동 판정이라 no-op)
     if (action.act === 1 && action.type === 'confirm') return;
 
-    // 2/3/4 막은 아직 미구현
+    // 2막 — 코어 저울에 올리기
+    if (action.act === 2 && action.type === 'placeOnScale') {
+      const ts = sessionManager.applyAct2Place(
+        teamState.teamId,
+        action.color,
+        action.side
+      );
+      if (ts) io.to(teamRoom(teamState.teamId)).emit('team:state', ts);
+      return;
+    }
+
+    // 2막 — 저울에서 코어 제거
+    if (action.act === 2 && action.type === 'removeFromScale') {
+      const ts = sessionManager.applyAct2Remove(teamState.teamId, action.side);
+      if (ts) io.to(teamRoom(teamState.teamId)).emit('team:state', ts);
+      return;
+    }
+
+    // 2막 — 정답 코어 투입구에 제출
+    if (action.act === 2 && action.type === 'submit') {
+      const result = sessionManager.applyAct2Submit(
+        teamState.teamId,
+        action.color
+      );
+      if (!result) return;
+      const room = teamRoom(teamState.teamId);
+      io.to(room).emit('team:state', result.teamState);
+      if (result.evaluation.status === 'solved') {
+        io.to(room).emit('puzzle:solved', { act: 2, nextAct: 3 });
+      } else {
+        io.to(room).emit('puzzle:failed', {
+          act: 2,
+          reason: 'wrong_core',
+        });
+        // 오답 → 짧은 피드백 후 제출 상태 클리어 (저울은 그대로 유지 → 추론 이어가기)
+        sessionManager.resetAct2Submission(teamState.teamId);
+        const reset = sessionManager.getTeamState(teamState.teamId);
+        if (reset) io.to(room).emit('team:state', reset);
+      }
+      return;
+    }
+
+    // 3/4 막은 아직 미구현
   });
 
   // 같은 팀 멤버끼리 위치 공유. 서버는 권위 검증 안 하고 단순 릴레이.

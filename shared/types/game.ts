@@ -14,6 +14,9 @@ export type ActId = 1 | 2 | 3 | 4;
 // 팀 내 학생 슬롯 (입장 순 A→B→C→D 자동 배정)
 export type StudentSlot = 'A' | 'B' | 'C' | 'D';
 
+// 플레이어가 선택할 수 있는 캐릭터 종류 (assets/characters/<id>.png 와 1:1 매칭)
+export type Character = 'dragon' | 'mibam' | 'kotbam' | 'subam';
+
 // 1막 경로 선택 (각 학생의 두 갈림길)
 export type PathChoice = 1 | 2;
 
@@ -23,6 +26,7 @@ export type StudentInfo = {
   name: string;
   connected: boolean; // 현재 소켓 연결 여부 (재접속 대기 중이면 false)
   slot?: StudentSlot; // 팀 배정 후에만 부여
+  character?: Character; // 학생이 직접 선택. 미선택 시 startGame 에서 자동 배정
 };
 
 // ===== 1막: 전력망 동기화 =====
@@ -33,11 +37,15 @@ export type Act1State = {
 // ===== 2막: 냉각수 코어 식별 =====
 export type CoreColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange';
 
+// 양팔 저울. 한 쪽 접시에 코어 1개씩만 (각 색이 1개씩 존재하므로 비교 의미가 명확).
+// 색 → 무게 매핑은 ACT2_CORE_WEIGHTS (서버만 보유). 클라는 라벨이 긁힌 코어로만 봄.
+// scaleTilt 는 서버가 무게를 비교해 클라에 알려주는 "관찰 결과" — 절대값은 안 알려줌.
+export type ScaleTilt = 'left' | 'right' | 'balanced' | 'empty';
 export type Act2State = {
-  scaleLeft: CoreColor[];
-  scaleRight: CoreColor[];
+  scaleLeft: CoreColor | null;
+  scaleRight: CoreColor | null;
+  scaleTilt: ScaleTilt;
   submittedCore: CoreColor | null;
-  revealedClues: Record<StudentId, string>; // 학생별 자기 단서
 };
 
 // ===== 3막: AI 오버라이드 암호 =====
