@@ -1,5 +1,7 @@
 // 하단 visual-novel 스타일 대사 박스.
 // 타이핑 효과 + Space/Enter/탭 으로 다음. 타이핑 중 누르면 즉시 완성.
+// 마지막 줄에 choices 가 있으면 타이핑 완료 후 선택지 UI 표시.
+// 방향키 ↑/↓ 로 포커스 이동 · Space/Enter 로 확정 · 클릭/탭도 가능.
 
 import { useEffect, useRef, useState } from 'react';
 import { useDialogueStore } from '@/store/useDialogueStore';
@@ -11,56 +13,95 @@ export default function DialogueBox() {
   const lines = useDialogueStore((s) => s.lines);
   const index = useDialogueStore((s) => s.index);
   const next = useDialogueStore((s) => s.next);
+  const choose = useDialogueStore((s) => s.choose);
 
   const line = lines[index];
   const [typed, setTyped] = useState('');
+  const [focused, setFocused] = useState(0);
   const typingRef = useRef(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 타이핑 효과
+  const completeTyping = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    typingRef.current = false;
+  };
+
+  // 줄 바뀔 때마다 포커스 초기화 + 타이핑
   useEffect(() => {
     if (!open || !line) return;
+    setFocused(0);
     const target = line.text;
     setTyped('');
     typingRef.current = true;
     let i = 0;
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       i++;
       setTyped(target.slice(0, i));
-      if (i >= target.length) {
-        clearInterval(interval);
-        typingRef.current = false;
-      }
+      if (i >= target.length) completeTyping();
     }, TYPING_MS);
-    return () => {
-      clearInterval(interval);
-      typingRef.current = false;
-    };
+    return completeTyping;
   }, [open, index, line]);
 
-  // 키보드: Space / Enter 로 다음 (타이핑 중이면 즉시 완성)
+  const hasChoices = !!line?.choices?.length;
+  const typingDone = !!line && typed === line.text;
+
+  // 키보드 입력
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' && e.code !== 'Enter') return;
-      e.preventDefault();
-      if (typingRef.current && line) {
-        setTyped(line.text);
-        typingRef.current = false;
-      } else {
+      // 타이핑 중 Space/Enter → 즉시 완성
+      if (typingRef.current && (e.code === 'Space' || e.code === 'Enter')) {
+        e.preventDefault();
+        if (line) {
+          completeTyping();
+          setTyped(line.text);
+        }
+        return;
+      }
+
+      if (!typingDone) return;
+
+      // 선택지가 있는 줄
+      if (hasChoices && line?.choices) {
+        const n = line.choices.length;
+        if (e.code === 'ArrowDown') {
+          e.preventDefault();
+          setFocused((f) => (f + 1) % n);
+          return;
+        }
+        if (e.code === 'ArrowUp') {
+          e.preventDefault();
+          setFocused((f) => (f - 1 + n) % n);
+          return;
+        }
+        if (e.code === 'Space' || e.code === 'Enter') {
+          e.preventDefault();
+          choose(line.choices[focused].value);
+          return;
+        }
+        return;
+      }
+
+      // 일반 줄 — Space/Enter 로 다음
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
         next();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, next, line]);
+  }, [open, next, choose, line, hasChoices, typingDone, focused]);
 
   if (!open || !line) return null;
 
   const advance = () => {
     if (typingRef.current) {
+      completeTyping();
       setTyped(line.text);
-      typingRef.current = false;
-    } else {
+    } else if (!hasChoices) {
       next();
     }
   };
@@ -68,11 +109,35 @@ export default function DialogueBox() {
   return (
     <div style={styles.overlay} onClick={advance}>
       <div style={styles.box}>
-        <div style={styles.speaker}>{line.speaker}</div>
+        {line.speaker && <div style={styles.speaker}>{line.speaker}</div>}
         <div style={styles.text}>{typed}</div>
-        <div style={styles.indicator}>
-          {index + 1} / {lines.length} · Space / 탭 으로 다음 ▶
-        </div>
+
+        {hasChoices && typingDone ? (
+          <div style={styles.choices} onClick={(e) => e.stopPropagation()}>
+            {line.choices!.map((c, i) => {
+              const isFocused = i === focused;
+              return (
+                <button
+                  key={c.value}
+                  style={{
+                    ...styles.choiceBtn,
+                    ...(isFocused ? styles.choiceBtnFocused : null),
+                  }}
+                  onMouseEnter={() => setFocused(i)}
+                  onClick={() => choose(c.value)}
+                >
+                  <span style={styles.marker}>{isFocused ? '▶' : ' '}</span>
+                  {c.label}
+                </button>
+              );
+            })}
+            <div style={styles.choiceHint}>↑↓ 로 선택 · Space / Enter 로 결정</div>
+          </div>
+        ) : (
+          <div style={styles.indicator}>
+            {hasChoices ? '...' : `${index + 1} / ${lines.length} · Space / 탭 으로 다음 ▶`}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -120,6 +185,46 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     marginTop: 10,
     textAlign: 'right',
+    letterSpacing: 0.3,
+  },
+  choices: {
+    marginTop: 14,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  choiceBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '8px 16px',
+    background: 'transparent',
+    border: '1.5px solid transparent',
+    borderRadius: 6,
+    color: '#cbd5e1',
+    fontSize: 16,
+    fontFamily: 'Pretendard, sans-serif',
+    fontWeight: 500,
+    cursor: 'pointer',
+    textAlign: 'left',
+    transition: 'all 120ms ease',
+  },
+  choiceBtnFocused: {
+    background: 'rgba(59, 130, 246, 0.18)',
+    border: '1.5px solid #3b82f6',
+    color: '#fde68a',
+    fontWeight: 700,
+  },
+  marker: {
+    display: 'inline-block',
+    width: 14,
+    color: '#fbbf24',
+    fontSize: 14,
+  },
+  choiceHint: {
+    marginTop: 8,
+    color: '#64748b',
+    fontSize: 11,
     letterSpacing: 0.3,
   },
 };

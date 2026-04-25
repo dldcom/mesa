@@ -27,6 +27,15 @@ export interface ServerToClientEvents {
   'puzzle:solved': (data: { act: ActId; nextAct: ActId | null }) => void;
   'puzzle:failed': (data: { act: ActId; reason: string }) => void;
 
+  // 같은 팀의 다른 플레이어 위치 브로드캐스트 (자기 자신은 제외)
+  'player:moved': (data: {
+    slot: StudentSlot;
+    x: number;
+    y: number;
+    anim: string | null;
+    frame: number;
+  }) => void;
+
   // 교사 대시보드
   'teacher:sessionState': (state: SessionState) => void;
 
@@ -55,6 +64,14 @@ export interface ClientToServerEvents {
 
   // 퍼즐 조작 (discriminated union)
   'puzzle:action': (action: PuzzleAction) => void;
+
+  // 내 위치 송신 (서버가 같은 팀 룸으로 forward)
+  'player:move': (data: {
+    x: number;
+    y: number;
+    anim: string | null;
+    frame: number;
+  }) => void;
 }
 
 // ============ 막별 퍼즐 조작 ============

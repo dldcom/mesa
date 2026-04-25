@@ -55,4 +55,17 @@ export const registerPuzzleHandlers = (io: MesaIo, socket: Socket) => {
 
     // 2/3/4 막은 아직 미구현
   });
+
+  // 같은 팀 멤버끼리 위치 공유. 서버는 권위 검증 안 하고 단순 릴레이.
+  socket.on('player:move', (data) => {
+    const ctx = sessionManager.getPlayerContextBySocket(socket.id);
+    if (!ctx) return;
+    socket.to(teamRoom(ctx.teamState.teamId)).emit('player:moved', {
+      slot: ctx.slot,
+      x: data.x,
+      y: data.y,
+      anim: data.anim,
+      frame: data.frame,
+    });
+  });
 };

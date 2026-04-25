@@ -89,11 +89,14 @@ export const saveAssetJson = async (
   await ensureDir(typeDir(type));
   const now = new Date().toISOString();
 
-  // 기존 createdAt 유지 (업데이트인 경우)
+  // 기존 createdAt·imagePath 유지 (업데이트인 경우) — 이미지 교체 없이 JSON 만 다시 저장하는 흐름에서
+  // imagePath 가 사라지면 MapMaker 가 이미지를 못 찾는 버그 방지.
   let createdAt = now;
+  let imagePath: string | undefined;
   try {
     const existing = JSON.parse(await fs.readFile(metaPath(type, id), 'utf-8'));
     if (existing.createdAt) createdAt = existing.createdAt;
+    if (typeof existing.imagePath === 'string') imagePath = existing.imagePath;
   } catch {
     /* 파일 없으면 새로 생성 */
   }
@@ -104,6 +107,7 @@ export const saveAssetJson = async (
     name: metadata.name,
     createdAt,
     updatedAt: now,
+    ...(imagePath ? { imagePath } : {}),
   };
   await fs.writeFile(
     metaPath(type, id),
@@ -134,13 +138,26 @@ export const listAssets = async (type: AssetType): Promise<AssetMetadata[]> => {
 };
 
 // ===== 단건 조회 =====
+// JSON 에 imagePath 누락돼 있을 경우 디스크에서 동일 ID 의 이미지 파일을 스캔해 자동 복구.
 export const getAsset = async (
   type: AssetType,
   id: string
 ): Promise<AssetMetadata | null> => {
   try {
     const content = await fs.readFile(metaPath(type, id), 'utf-8');
-    return JSON.parse(content) as AssetMetadata;
+    const meta = JSON.parse(content) as AssetMetadata;
+    if (typeof meta.imagePath !== 'string') {
+      for (const ext of ['png', 'jpg', 'jpeg', 'gif', 'webp']) {
+        try {
+          await fs.access(imagePathOf(type, id, ext));
+          meta.imagePath = `/assets/${type}/${id}.${ext}`;
+          break;
+        } catch {
+          /* 해당 확장자 없음 */
+        }
+      }
+    }
+    return meta;
   } catch {
     return null;
   }

@@ -2,7 +2,7 @@
 // Phaser 가 이미 의존성이므로 별도 mitt 추가 안 하고 내장 EventEmitter 사용.
 
 import Phaser from 'phaser';
-import type { TeamState } from '@shared/types/game';
+import type { TeamState, StudentSlot } from '@shared/types/game';
 
 export type GameEventMap = {
   // Phaser → React: NPC 근처 진입/이탈 (대화 말풍선 제어)
@@ -16,6 +16,13 @@ export type GameEventMap = {
   'server:teamState': { teamState: TeamState };
   'server:puzzleSolved': { act: 1 | 2 | 3 | 4 };
   'server:puzzleFailed': { act: 1 | 2 | 3 | 4; reason: string };
+  'server:playerMoved': {
+    slot: StudentSlot;
+    x: number;
+    y: number;
+    anim: string | null;
+    frame: number;
+  };
 };
 
 class TypedEventBus {

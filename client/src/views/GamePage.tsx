@@ -6,6 +6,7 @@ import type Phaser from 'phaser';
 import { createPhaserGame } from '@/main-phaser';
 import { gameEventBus } from '@/lib/gameEventBus';
 import DialogueBox from '@/components/DialogueBox';
+import Act1StatusPanel from '@/components/Act1StatusPanel';
 import { getSocket } from '@/services/socket';
 import { useSessionStore } from '@/store/useSessionStore';
 import type { TeamState } from '@shared/types/game';
@@ -64,15 +65,24 @@ export default function GamePage() {
       gameEventBus.emit('server:puzzleSolved', { act: data.act });
     const onFailed = (data: { act: 1 | 2 | 3 | 4; reason: string }) =>
       gameEventBus.emit('server:puzzleFailed', data);
+    const onPlayerMoved = (data: {
+      slot: 'A' | 'B' | 'C' | 'D';
+      x: number;
+      y: number;
+      anim: string | null;
+      frame: number;
+    }) => gameEventBus.emit('server:playerMoved', data);
 
     socket.on('team:state', onTeamState);
     socket.on('puzzle:solved', onSolved);
     socket.on('puzzle:failed', onFailed);
+    socket.on('player:moved', onPlayerMoved);
 
     return () => {
       socket.off('team:state', onTeamState);
       socket.off('puzzle:solved', onSolved);
       socket.off('puzzle:failed', onFailed);
+      socket.off('player:moved', onPlayerMoved);
     };
   }, [myTeamId]);
 
@@ -84,6 +94,7 @@ export default function GamePage() {
         <div style={styles.proximityBubble}>{proximityLabel}</div>
       )}
 
+      <Act1StatusPanel />
       <DialogueBox />
     </div>
   );

@@ -57,6 +57,15 @@ export default class BootScene extends Phaser.Scene {
     this.load.image('lever_on', '/assets/items/lever_on.png');
     this.load.image('door_panel_L', '/assets/items/door_panel_L.png');
     this.load.image('door_panel_R', '/assets/items/door_panel_R.png');
+
+    // 효과음 (파일 없으면 404 로 로드 실패하지만 게임은 정상 동작)
+    this.load.audio('sfx_door_open', '/assets/audio/door_open.mp3');
+    this.load.audio('sfx_door_denied', '/assets/audio/door_denied.mp3');
+
+    // 로드 실패 조용히 처리 (에셋 파일 없을 때 console error 스팸 방지)
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      console.warn('[BootScene] 에셋 로드 실패 (계속 진행):', file.key);
+    });
   }
 
   create() {
