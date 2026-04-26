@@ -4,6 +4,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import sharp from 'sharp';
 
 export type AssetType = 'characters' | 'items' | 'maps' | 'npcs';
 
@@ -51,7 +52,39 @@ export const generateAssetId = (baseName?: string): string => {
   return `${base}-${timestamp}${random}`;
 };
 
+// 맵 배경 최적화 — 1280×720 으로 리사이즈 + JPG q=85.
+// 캐릭터/아이템/NPC 는 투명 PNG 가 필요해서 변환 안 함 (maps 만).
+const MAP_TARGET_W = 1280;
+const MAP_TARGET_H = 720;
+const MAP_JPG_QUALITY = 85;
+
+const optimizeMapImage = async (buf: Buffer): Promise<{ buf: Buffer; ext: string }> => {
+  const out = await sharp(buf)
+    .resize(MAP_TARGET_W, MAP_TARGET_H, { fit: 'fill' })
+    .jpeg({ quality: MAP_JPG_QUALITY, progressive: true, mozjpeg: true })
+    .toBuffer();
+  return { buf: out, ext: 'jpg' };
+};
+
+// 같은 ID 의 다른 확장자 이미지가 남아있으면 정리 (예: 이전에 .png 로 저장됐던 거)
+const removeStaleImages = async (
+  type: AssetType,
+  id: string,
+  keepExt: string
+) => {
+  for (const ext of ['png', 'jpg', 'jpeg', 'gif', 'webp']) {
+    if (ext === keepExt) continue;
+    try {
+      await fs.unlink(imagePathOf(type, id, ext));
+    } catch {
+      /* 해당 확장자 없음 — 정상 */
+    }
+  }
+};
+
 // ===== 저장 (이미지 포함) =====
+// maps 타입은 자동으로 JPG 1280×720 으로 최적화 (용량 절약).
+// 다른 타입은 원본 그대로 (캐릭터·아이템·NPC 는 투명 PNG 필요).
 export const saveAssetWithImage = async (
   type: AssetType,
   id: string,
@@ -61,13 +94,22 @@ export const saveAssetWithImage = async (
   await ensureDir(typeDir(type));
   const now = new Date().toISOString();
 
-  const ext = metadata.imageExt.replace(/^\./, '');
-  await fs.writeFile(imagePathOf(type, id, ext), imageBuffer);
+  let ext = metadata.imageExt.replace(/^\./, '');
+  let bufToWrite = imageBuffer;
+  if (type === 'maps') {
+    const optimized = await optimizeMapImage(imageBuffer);
+    bufToWrite = optimized.buf;
+    ext = optimized.ext;
+    await removeStaleImages(type, id, ext);
+  }
+
+  await fs.writeFile(imagePathOf(type, id, ext), bufToWrite);
 
   const fullMeta: AssetMetadata = {
     ...metadata,
     id,
     name: metadata.name,
+    imageExt: ext, // 클라가 알 수 있게 실제 저장된 확장자로 덮어씀
     createdAt: now,
     updatedAt: now,
     imagePath: `/assets/${type}/${id}.${ext}`,

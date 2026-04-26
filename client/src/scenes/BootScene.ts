@@ -30,10 +30,11 @@ export default class BootScene extends Phaser.Scene {
       bar.width = 400 * value;
     });
 
-    // 맵 (프롤로그 + 1막 전력망 동기화)
-    this.load.image('prologue_bg', '/assets/maps/prologue.png');
-    this.load.image('act1_bg', '/assets/maps/act1_power_grid.png');
+    // 맵 (프롤로그 + 1막 + 2막) — JPG 1280×720 으로 최적화 (원본 PNG 는 assets/maps/ 에 보존)
+    this.load.image('prologue_bg', '/assets/maps/prologue.jpg');
+    this.load.image('act1_bg', '/assets/maps/act1_power_grid.jpg');
     this.load.json('act1_data', '/assets/maps/act1_power_grid.json');
+    this.load.image('act2_bg', '/assets/maps/act2.jpg');
 
     // 1막/2막 대사 스크립트
     this.load.json('dialogue_act1', '/assets/dialogue/act1.json');

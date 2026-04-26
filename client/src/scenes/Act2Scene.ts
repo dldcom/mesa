@@ -20,6 +20,8 @@ import type {
   StudentSlot,
   TeamState,
 } from '@shared/types/game';
+import { ACT2_SPAWNS } from '@shared/maps/act2.spawns';
+import { requireSpawn } from '@shared/maps/types';
 import {
   animKey,
   ensureCharacterAnimations,
@@ -32,30 +34,35 @@ const VIEW_W = 1280;
 const VIEW_H = 720;
 const PLAYER_SPEED = 180;
 
-// 저울 위치
-const SCALE_CENTER_X = VIEW_W / 2;
-const SCALE_CENTER_Y = 360; // 빔 중심
-const SCALE_BEAM_LEN = 220; // 빔 양쪽 길이
-const SCALE_PILLAR_TOP_Y = SCALE_CENTER_Y;
-const SCALE_PILLAR_BASE_Y = 560;
+// 저울 — 위치는 ACT2_SPAWNS 의 'item_scale_center' 에서, 빔 길이만 코드 상수
+const SCALE_BEAM_LEN = 220; // 빔 양쪽 길이 (시각 디자인 상수)
 const PAN_DROP_RADIUS = 70; // 코어 드롭 인식 반경
+const SCALE_PILLAR_BASE_Y = 560; // 받침대 바닥 (시각용)
 
-// 코어 홈 위치 (하단 가로 배치)
-const CORES_BASE_Y = 660;
+// 코어 시각 사이즈 (위치는 ACT2_SPAWNS 에서)
 const CORE_SIZE = 56;
-const CORE_GAP = 24;
 
-// 투입구 위치 (좌상단)
-const INLET_X = 1140;
-const INLET_Y = 130;
+// 투입구 시각 사이즈 (위치는 ACT2_SPAWNS 에서)
 const INLET_W = 180;
 const INLET_H = 130;
 const INLET_DROP_RADIUS = 90;
 
-// NPC (연구원) 위치
-const RESEARCHER_X = 140;
-const RESEARCHER_Y = 200;
+// NPC 인접 거리
 const NPC_PROXIMITY = 80;
+
+// ── ACT2_SPAWNS 에서 위치 lookup ──
+const PLAYER_SPAWN = requireSpawn(ACT2_SPAWNS, 'playerspawn');
+const RESEARCHER_SPAWN = requireSpawn(ACT2_SPAWNS, 'npc_researcher');
+const SCALE_CENTER = requireSpawn(ACT2_SPAWNS, 'item_scale_center');
+const INLET_SPAWN = requireSpawn(ACT2_SPAWNS, 'item_inlet');
+
+const SCALE_CENTER_X = SCALE_CENTER.x;
+const SCALE_CENTER_Y = SCALE_CENTER.y;
+const SCALE_PILLAR_TOP_Y = SCALE_CENTER_Y;
+const RESEARCHER_X = RESEARCHER_SPAWN.x;
+const RESEARCHER_Y = RESEARCHER_SPAWN.y;
+const INLET_X = INLET_SPAWN.x;
+const INLET_Y = INLET_SPAWN.y;
 
 type CoreSprite = {
   color: CoreColor;
@@ -160,29 +167,32 @@ export default class Act2Scene extends Phaser.Scene {
       useDialogueStore.getState().close();
     });
 
+    // 대화를 Space 로 닫으면 같은 keydown 이 update() 의 JustDown(space) 로 한 번 더 잡혀서
+    // 방금 닫은 대화가 곧바로 재시작되는 문제가 있음. 닫히는 순간 Phaser 키 상태를 리셋.
+    const unsubDialogue = useDialogueStore.subscribe((state, prev) => {
+      if (prev?.open && !state.open) this.spaceKey.reset();
+    });
+    this.events.once('shutdown', unsubDialogue);
+
     // 인트로 대사
     this.time.delayedCall(500, () => this.showDialogue('intro'));
   }
 
-  // ── 배경 (placeholder: 금속 바닥 + 그리드) ──
+  // ── 배경: act2.png (빈 냉각실) 한 장 ──
   private drawBackground() {
-    this.add.rectangle(VIEW_W / 2, VIEW_H / 2, VIEW_W, VIEW_H, 0x1f2937);
-    // 그리드 라인
-    for (let x = 0; x < VIEW_W; x += 64) {
-      this.add.rectangle(x, VIEW_H / 2, 1, VIEW_H, 0x2c3a4d, 0.5);
-    }
-    for (let y = 0; y < VIEW_H; y += 64) {
-      this.add.rectangle(VIEW_W / 2, y, VIEW_W, 1, 0x2c3a4d, 0.5);
-    }
-    // 가장자리 벽
-    this.add.rectangle(VIEW_W / 2, 8, VIEW_W, 16, 0x0f172a);
-    this.add.rectangle(VIEW_W / 2, VIEW_H - 8, VIEW_W, 16, 0x0f172a);
-    this.add.rectangle(8, VIEW_H / 2, 16, VIEW_H, 0x0f172a);
-    this.add.rectangle(VIEW_W - 8, VIEW_H / 2, 16, VIEW_H, 0x0f172a);
+    const bg = this.add.image(0, 0, 'act2_bg');
+    bg.setOrigin(0, 0);
+    bg.setDisplaySize(VIEW_W, VIEW_H);
+    bg.setDepth(0);
   }
 
   private spawnPlayer() {
-    this.player = this.physics.add.sprite(220, 500, this.myCharacter, 0);
+    this.player = this.physics.add.sprite(
+      PLAYER_SPAWN.x,
+      PLAYER_SPAWN.y,
+      this.myCharacter,
+      0
+    );
     this.player.setDepth(15);
     this.player.setCollideWorldBounds(true);
     this.player.setSize(32, 20);
@@ -257,13 +267,11 @@ export default class Act2Scene extends Phaser.Scene {
   }
 
   private spawnCores() {
-    // 6개 코어 가로 정렬 (중앙)
-    const totalW = ACT2_CORE_COLORS.length * CORE_SIZE +
-      (ACT2_CORE_COLORS.length - 1) * CORE_GAP;
-    const startX = (VIEW_W - totalW) / 2 + CORE_SIZE / 2;
-    ACT2_CORE_COLORS.forEach((color, i) => {
-      const homeX = startX + i * (CORE_SIZE + CORE_GAP);
-      const homeY = CORES_BASE_Y;
+    // 코어 홈 위치는 ACT2_SPAWNS 의 'item_core_<color>' 에서 직접 lookup
+    ACT2_CORE_COLORS.forEach((color) => {
+      const spawn = requireSpawn(ACT2_SPAWNS, `item_core_${color}`);
+      const homeX = spawn.x;
+      const homeY = spawn.y;
       const container = this.add.container(homeX, homeY);
       container.setDepth(20);
 
